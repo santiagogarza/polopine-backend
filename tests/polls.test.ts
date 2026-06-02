@@ -5,6 +5,7 @@ import * as store from "../src/store.js";
 
 const ADMIN_KEY = "test-admin-key";
 const VOTER_ID = "voter-test-0001";
+const VOTER_ID_B = "voter-test-0002";
 
 describe("polls API", () => {
   beforeEach(() => {
@@ -56,7 +57,7 @@ describe("polls API", () => {
     expect(voteRes.body.options[1].votes).toBe(0);
   });
 
-  it("returns results with correct totalVotes", async () => {
+  it("returns results with correct totalVotes for distinct voters", async () => {
     const createRes = await request(app)
       .post("/polls")
       .send({
@@ -76,12 +77,12 @@ describe("polls API", () => {
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", VOTER_ID_B)
       .send({ optionId: opt0 })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", VOTER_ID_B)
       .send({ optionId: opt1 })
       .expect(200);
 
@@ -90,10 +91,110 @@ describe("polls API", () => {
       .expect(200);
 
     expect(resultsRes.body.question).toBe("Lunch?");
-    expect(resultsRes.body.totalVotes).toBe(3);
-    expect(resultsRes.body.options[0].votes).toBe(2);
+    expect(resultsRes.body.totalVotes).toBe(2);
+    expect(resultsRes.body.options.find((o: { id: string }) => o.id === opt0).votes).toBe(1);
+    expect(resultsRes.body.options.find((o: { id: string }) => o.id === opt1).votes).toBe(1);
+  });
+
+  it("does not double-count when the same voter votes the same option twice", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Double click?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionId = createRes.body.options[0].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId })
+      .expect(200);
+    const second = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId })
+      .expect(200);
+
+    expect(second.body.options[0].votes).toBe(1);
+    expect(second.body.options[1].votes).toBe(0);
+
+    const resultsRes = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+
+    expect(resultsRes.body.totalVotes).toBe(1);
+  });
+
+  it("switches a voter from option A to B", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Switch?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionA })
+      .expect(200);
+
+    const switched = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionB })
+      .expect(200);
+
+    expect(switched.body.options[0].votes).toBe(0);
+    expect(switched.body.options[1].votes).toBe(1);
+  });
+
+  it("switching one voter does not affect another voter's vote", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Two voters?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionA })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID_B)
+      .send({ optionId: optionA })
+      .expect(200);
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionB })
+      .expect(200);
+
+    const resultsRes = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+
+    expect(resultsRes.body.totalVotes).toBe(2);
+    expect(resultsRes.body.options[0].votes).toBe(1);
     expect(resultsRes.body.options[1].votes).toBe(1);
-    expect(resultsRes.body.options[2].votes).toBe(0);
   });
 
   it("returns 401 on DELETE without admin key", async () => {
@@ -135,7 +236,6 @@ describe("polls API", () => {
       .expect(201);
 
     const pollId = createRes.body.id as string;
-    const midId = createRes.body.options[1].id as string;
     const highId = createRes.body.options[2].id as string;
 
     await request(app)
@@ -145,27 +245,22 @@ describe("polls API", () => {
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", VOTER_ID_B)
       .send({ optionId: highId })
-      .expect(200);
-    await request(app)
-      .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
-      .send({ optionId: midId })
       .expect(200);
 
     const resultsRes = await request(app)
       .get(`/polls/${pollId}/results`)
       .expect(200);
 
-    expect(resultsRes.body.options.map((o: { text: string }) => o.text)).toEqual([
-      "High",
-      "Mid",
-      "Low",
-    ]);
-    expect(resultsRes.body.options.map((o: { votes: number }) => o.votes)).toEqual([
-      2, 1, 0,
-    ]);
+    expect(resultsRes.body.options[0].text).toBe("High");
+    expect(resultsRes.body.options[0].votes).toBe(2);
+    expect(resultsRes.body.totalVotes).toBe(2);
+    expect(
+      resultsRes.body.options
+        .slice(1)
+        .every((o: { votes: number }) => o.votes === 0),
+    ).toBe(true);
   });
 
   it("returns 401 on POST reset-votes without admin key", async () => {

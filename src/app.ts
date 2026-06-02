@@ -65,11 +65,11 @@ app.post("/polls", (req: Request, res: Response) => {
   }
 
   const poll = store.createPoll(question.trim(), trimmedOptions);
-  res.status(201).json(poll);
+  res.status(201).json(store.toPublicPoll(poll));
 });
 
 app.get("/polls", (_req: Request, res: Response) => {
-  res.json(store.listPolls());
+  res.json(store.listPolls().map(store.toPublicPoll));
 });
 
 app.get("/polls/:id", (req: Request, res: Response) => {
@@ -78,7 +78,7 @@ app.get("/polls/:id", (req: Request, res: Response) => {
     res.status(404).json({ error: "Poll not found" });
     return;
   }
-  res.json(poll);
+  res.json(store.toPublicPoll(poll));
 });
 
 app.post("/polls/:id/vote", requireVoterId, (req: Request, res: Response) => {
@@ -101,8 +101,13 @@ app.post("/polls/:id/vote", requireVoterId, (req: Request, res: Response) => {
     return;
   }
 
-  const updated = store.vote(req.params.id, optionId);
-  res.json(updated);
+  const voterId = res.locals.voterId as string;
+  const updated = store.vote(req.params.id, optionId, voterId);
+  if (!updated) {
+    res.status(404).json({ error: "Poll not found" });
+    return;
+  }
+  res.json(store.toPublicPoll(updated));
 });
 
 app.get("/polls/:id/results", (req: Request, res: Response) => {
@@ -154,12 +159,12 @@ app.post(
       res.status(404).json({ error: "Poll not found" });
       return;
     }
-    res.json(poll);
+    res.json(store.toPublicPoll(poll));
   },
 );
 
 app.post("/admin/reset-all", requireLocal, (_req: Request, res: Response) => {
   store.clearPolls();
   store.seed();
-  res.json(store.listPolls());
+  res.json(store.listPolls().map(store.toPublicPoll));
 });

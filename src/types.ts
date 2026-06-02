@@ -9,6 +9,8 @@ export interface Poll {
   question: string;
   options: PollOption[];
   createdAt: string;
+  /** voterId → optionId; internal only, omitted from JSON responses */
+  voters: Map<string, string>;
 }
 
 export interface PollResults {
