@@ -1,0 +1,45 @@
+---
+description: Polopine API – conventions, run commands, and cloud-agent setup
+alwaysApply: true
+---
+
+# Polopine API
+
+In-memory polling API. Sibling repo `polopine-frontend` is a Vite + React UI on Vercel.
+Both repos may be cloned together in the `polopine` multi-repo Cloud Agent environment.
+
+## Run commands
+
+```bash
+npm install         # idempotent
+npm test            # vitest + supertest
+npm run typecheck   # tsc --noEmit
+npm run dev         # tsx watch on PORT (default 8080)
+```
+
+Green run before opening any PR: `npm install && npm run typecheck && npm test`.
+
+## Conventions
+
+- No shared imports with `polopine-frontend`. Types are duplicated on purpose.
+- Errors return JSON `{ error: string }` with the right status code.
+- Add a vitest case in `tests/` for any new endpoint or branch.
+- Don't introduce a database — the demo depends on the in-memory store.
+- `ADMIN_API_KEY` is sensitive: never hardcode, log, or echo it.
+
+## Cloud Agent specifics
+
+- Secrets you may need from Cursor Settings → Cloud Agents → Secrets:
+  - `ADMIN_API_KEY` — required only for `DELETE /polls/:id` and `POST /polls/:id/reset-votes`.
+- Smoke check: `curl localhost:8080/health` returns `{ "status": "ok", "version": "..." }`.
+- A `beforeShellExecution` hook blocks `rm -rf`, `git push --force[-with-lease]`, and `git reset --hard`.
+  If a command is denied, pick a safer alternative — do not try to bypass it.
+- When part of multi-repo, the frontend repo is checked out as a sibling. Read it
+  to keep request/response shapes in sync, but only open PRs in the repo a change
+  actually belongs to.
+
+## Out of scope (don't touch unless asked)
+
+- Database / persistence layer
+- Auth beyond the `x-admin-key` header
+- Cross-repo imports from `polopine-frontend`

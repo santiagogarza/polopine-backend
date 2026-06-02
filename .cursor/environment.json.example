@@ -1,0 +1,16 @@
+{
+  "_comment": "Rename to environment.json to switch from agent-led setup to a Dockerfile-based environment. Cloud Agents resolves config in this order: .cursor/environment.json -> personal saved env -> team saved env. Today this repo uses agent-led setup, so this file is intentionally inactive.",
+
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+
+  "install": "npm install",
+
+  "start": "npm run dev",
+
+  "terminals": [
+    { "name": "api", "command": "npm run dev" }
+  ]
+}

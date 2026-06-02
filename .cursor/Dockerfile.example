@@ -1,0 +1,38 @@
+# Polopine API – advanced Cloud Agents environment (Dockerfile)
+#
+# This file is OFF by default. Cursor only uses it when .cursor/environment.json
+# references it (see .cursor/environment.json.example for the matching config).
+#
+# Why you would switch on the Dockerfile path:
+#   - You need a specific Node / system-package version pinned for every run
+#   - Your agent needs system tools (e.g. Postgres client, Playwright, Chromium)
+#   - You want reproducible, snapshot-cached cold starts across the team
+#
+# IMPORTANT
+#   - Do NOT `COPY` your project source. Cursor checks out the right commit for you.
+#   - This image only installs system + language tooling and warms caches.
+
+FROM node:22-bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NODE_ENV=development \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false
+
+# System packages the agent might need at runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        openssh-client \
+        tini \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pre-warm the npm global cache + install the toolchain we use in CI
+RUN npm install -g npm@latest tsx@latest typescript@latest vitest@latest
+
+WORKDIR /workspace
+
+# Cursor mounts the repo here at runtime. The `install` step in
+# environment.json (e.g. `npm install`) runs against the real source.
