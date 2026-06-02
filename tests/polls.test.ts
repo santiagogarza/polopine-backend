@@ -32,6 +32,33 @@ describe("polls API", () => {
     expect(res.body.options[1].votes).toBe(0);
     expect(res.body.id).toBeTruthy();
     expect(res.body.createdAt).toBeTruthy();
+    expect(res.body.accentColor).toBe("orange");
+  });
+
+  it("creates a poll with a chosen accentColor", async () => {
+    const res = await request(app)
+      .post("/polls")
+      .send({
+        question: "Team color?",
+        options: ["Teal", "Blue"],
+        accentColor: "teal",
+      })
+      .expect(201);
+
+    expect(res.body.accentColor).toBe("teal");
+  });
+
+  it("returns 400 for invalid accentColor", async () => {
+    const res = await request(app)
+      .post("/polls")
+      .send({
+        question: "Bad color?",
+        options: ["A", "B"],
+        accentColor: "magenta",
+      })
+      .expect(400);
+
+    expect(res.body.error).toContain("accentColor must be one of");
   });
 
   it("increments votes when casting a vote", async () => {
@@ -90,6 +117,7 @@ describe("polls API", () => {
       .expect(200);
 
     expect(resultsRes.body.question).toBe("Lunch?");
+    expect(resultsRes.body.accentColor).toBe("orange");
     expect(resultsRes.body.totalVotes).toBe(3);
     expect(resultsRes.body.options[0].votes).toBe(2);
     expect(resultsRes.body.options[1].votes).toBe(1);
@@ -286,6 +314,11 @@ describe("polls API", () => {
       name: "empty option string",
       body: { question: "Q?", options: ["A", "  "] },
       error: "each option must be a non-empty string",
+    },
+    {
+      name: "invalid accentColor",
+      body: { question: "Q?", options: ["A", "B"], accentColor: "pink" },
+      error: "accentColor must be one of: orange, coral, amber, emerald, teal, blue, violet, rose",
     },
   ])("POST /polls returns 400 when $name", async ({ body, error }) => {
     const res = await request(app).post("/polls").send(body).expect(400);

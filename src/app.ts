@@ -7,6 +7,11 @@ import { rateLimit } from "./middleware/rateLimit.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireLocal } from "./middleware/requireLocal.js";
 import { requireVoterId } from "./middleware/requireVoterId.js";
+import {
+  ACCENT_COLORS,
+  DEFAULT_ACCENT_COLOR,
+  isAccentColor,
+} from "./accentColor.js";
 import * as store from "./store.js";
 import type { PollResults } from "./types.js";
 
@@ -33,9 +38,10 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 app.post("/polls", (req: Request, res: Response) => {
-  const { question, options } = req.body as {
+  const { question, options, accentColor } = req.body as {
     question?: unknown;
     options?: unknown;
+    accentColor?: unknown;
   };
 
   if (!isNonEmptyString(question)) {
@@ -64,7 +70,22 @@ app.post("/polls", (req: Request, res: Response) => {
     return;
   }
 
-  const poll = store.createPoll(question.trim(), trimmedOptions);
+  let resolvedAccent = DEFAULT_ACCENT_COLOR;
+  if (accentColor !== undefined) {
+    if (!isAccentColor(accentColor)) {
+      res.status(400).json({
+        error: `accentColor must be one of: ${ACCENT_COLORS.join(", ")}`,
+      });
+      return;
+    }
+    resolvedAccent = accentColor;
+  }
+
+  const poll = store.createPoll(
+    question.trim(),
+    trimmedOptions,
+    resolvedAccent,
+  );
   res.status(201).json(poll);
 });
 
@@ -118,6 +139,7 @@ app.get("/polls/:id/results", (req: Request, res: Response) => {
     question: poll.question,
     options: sortedOptions,
     totalVotes,
+    accentColor: poll.accentColor,
   };
   res.json(results);
 });
