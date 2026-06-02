@@ -4,6 +4,7 @@ import { app } from "../src/app.js";
 import * as store from "../src/store.js";
 
 const ADMIN_KEY = "test-admin-key";
+const VOTER_ID = "voter-test-0001";
 
 describe("polls API", () => {
   beforeEach(() => {
@@ -47,6 +48,7 @@ describe("polls API", () => {
 
     const voteRes = await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId })
       .expect(200);
 
@@ -69,14 +71,17 @@ describe("polls API", () => {
 
     await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId: opt0 })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId: opt0 })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId: opt1 })
       .expect(200);
 
@@ -135,14 +140,17 @@ describe("polls API", () => {
 
     await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId: highId })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId: highId })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId: midId })
       .expect(200);
 
@@ -174,6 +182,7 @@ describe("polls API", () => {
 
     await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId })
       .expect(200);
 
@@ -194,6 +203,7 @@ describe("polls API", () => {
 
     await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId })
       .expect(200);
 
@@ -321,6 +331,7 @@ describe("polls API", () => {
 
     const res = await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({})
       .expect(400);
 
@@ -330,6 +341,7 @@ describe("polls API", () => {
   it("POST /polls/:id/vote returns 404 for unknown poll", async () => {
     const res = await request(app)
       .post("/polls/00000000-0000-0000-0000-000000000000/vote")
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId: "opt-1" })
       .expect(404);
 
@@ -349,6 +361,7 @@ describe("polls API", () => {
 
     const res = await request(app)
       .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
       .send({ optionId: "00000000-0000-0000-0000-000000000000" })
       .expect(400);
 
@@ -445,5 +458,120 @@ describe("polls API", () => {
       .expect(204);
 
     await request(app).get(`/polls/${pollId}`).expect(404);
+  });
+
+  it("POST /polls/:id/vote returns 400 when x-voter-id header is missing", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Need voter id?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionId = createRes.body.options[0].id as string;
+
+    const res = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .send({ optionId })
+      .expect(400);
+
+    expect(res.body.error).toBe("x-voter-id header required");
+  });
+
+  it("POST /polls/:id/vote returns 400 when x-voter-id header is blank", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Blank voter id?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionId = createRes.body.options[0].id as string;
+
+    const res = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "   ")
+      .send({ optionId })
+      .expect(400);
+
+    expect(res.body.error).toBe("x-voter-id header required");
+  });
+
+  it("POST /polls/:id/vote returns 400 when x-voter-id header exceeds length cap", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Too long voter id?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionId = createRes.body.options[0].id as string;
+
+    const tooLong = "v".repeat(129);
+    const res = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", tooLong)
+      .send({ optionId })
+      .expect(400);
+
+    expect(res.body.error).toBe("x-voter-id header too long");
+  });
+
+  it("POST /admin/verify returns 204 with valid admin key", async () => {
+    await request(app)
+      .post("/admin/verify")
+      .set("x-admin-key", ADMIN_KEY)
+      .expect(204);
+  });
+
+  it("POST /admin/verify returns 401 with wrong admin key", async () => {
+    const res = await request(app)
+      .post("/admin/verify")
+      .set("x-admin-key", "wrong-key")
+      .expect(401);
+
+    expect(res.body.error).toBe("Unauthorized");
+  });
+
+  it("POST /admin/verify returns 401 without admin key header", async () => {
+    const res = await request(app).post("/admin/verify").expect(401);
+    expect(res.body.error).toBe("Unauthorized");
+  });
+
+  it("POST /admin/verify rate-limits repeated failures from the same client", async () => {
+    // Use a unique forwarded IP so we don't share a bucket with the other
+    // /admin/verify tests above (the rate limiter is per-process state).
+    const clientIp = "203.0.113.7";
+
+    for (let i = 0; i < 5; i++) {
+      await request(app)
+        .post("/admin/verify")
+        .set("x-forwarded-for", clientIp)
+        .set("x-admin-key", "wrong-key")
+        .expect(401);
+    }
+
+    const limited = await request(app)
+      .post("/admin/verify")
+      .set("x-forwarded-for", clientIp)
+      .set("x-admin-key", "wrong-key")
+      .expect(429);
+
+    expect(limited.body.error).toBe("Too many requests");
+    expect(limited.headers["retry-after"]).toBeTruthy();
+
+    // Once the bucket is full the limiter fails closed — even a valid key
+    // is rejected until the window resets.
+    await request(app)
+      .post("/admin/verify")
+      .set("x-forwarded-for", clientIp)
+      .set("x-admin-key", ADMIN_KEY)
+      .expect(429);
   });
 });

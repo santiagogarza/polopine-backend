@@ -3,8 +3,10 @@ import express, { type Request, type Response } from "express";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { rateLimit } from "./middleware/rateLimit.js";
 import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireLocal } from "./middleware/requireLocal.js";
+import { requireVoterId } from "./middleware/requireVoterId.js";
 import * as store from "./store.js";
 import type { PollResults } from "./types.js";
 
@@ -14,6 +16,10 @@ const packageJson = JSON.parse(
 ) as { version: string };
 
 export const app = express();
+
+// Render terminates TLS at a single proxy hop; trust it so `req.ip` reflects
+// the real client and the rate limiter buckets per-client instead of per-edge.
+app.set("trust proxy", 1);
 
 app.use(cors());
 app.use(express.json());
@@ -75,7 +81,7 @@ app.get("/polls/:id", (req: Request, res: Response) => {
   res.json(poll);
 });
 
-app.post("/polls/:id/vote", (req: Request, res: Response) => {
+app.post("/polls/:id/vote", requireVoterId, (req: Request, res: Response) => {
   const { optionId } = req.body as { optionId?: unknown };
 
   if (!isNonEmptyString(optionId)) {
@@ -115,6 +121,20 @@ app.get("/polls/:id/results", (req: Request, res: Response) => {
   };
   res.json(results);
 });
+
+const adminVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+});
+
+app.post(
+  "/admin/verify",
+  adminVerifyLimiter,
+  requireAdmin,
+  (_req: Request, res: Response) => {
+    res.status(204).send();
+  },
+);
 
 app.delete("/polls/:id", requireAdmin, (req: Request, res: Response) => {
   const deleted = store.deletePoll(req.params.id);
