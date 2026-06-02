@@ -71,17 +71,17 @@ describe("polls API", () => {
 
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-1")
       .send({ optionId: opt0 })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-2")
       .send({ optionId: opt0 })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-3")
       .send({ optionId: opt1 })
       .expect(200);
 
@@ -94,6 +94,100 @@ describe("polls API", () => {
     expect(resultsRes.body.options[0].votes).toBe(2);
     expect(resultsRes.body.options[1].votes).toBe(1);
     expect(resultsRes.body.options[2].votes).toBe(0);
+  });
+
+  it("keeps repeat votes for the same option idempotent", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Pick one",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionId = createRes.body.options[0].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId })
+      .expect(200);
+    const repeatRes = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId })
+      .expect(200);
+
+    expect(repeatRes.body.options[0].votes).toBe(1);
+    expect(repeatRes.body.options[1].votes).toBe(0);
+  });
+
+  it("moves a voter from one option to another", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Switch?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionA })
+      .expect(200);
+    const switchRes = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionB })
+      .expect(200);
+
+    expect(switchRes.body.options[0].votes).toBe(0);
+    expect(switchRes.body.options[1].votes).toBe(1);
+  });
+
+  it("keeps distinct voter totals stable when one voter switches", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Distinct voters?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-1")
+      .send({ optionId: optionA })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-2")
+      .send({ optionId: optionB })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-1")
+      .send({ optionId: optionB })
+      .expect(200);
+
+    const resultsRes = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+
+    expect(resultsRes.body.totalVotes).toBe(2);
+    expect(resultsRes.body.options.map((o: { votes: number }) => o.votes)).toEqual([
+      2, 0,
+    ]);
   });
 
   it("returns 401 on DELETE without admin key", async () => {
@@ -140,17 +234,17 @@ describe("polls API", () => {
 
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-1")
       .send({ optionId: highId })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-2")
       .send({ optionId: highId })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-3")
       .send({ optionId: midId })
       .expect(200);
 
@@ -215,6 +309,14 @@ describe("polls API", () => {
     expect(resetRes.body.options.every((o: { votes: number }) => o.votes === 0)).toBe(
       true,
     );
+
+    const voteAfterResetRes = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId })
+      .expect(200);
+
+    expect(voteAfterResetRes.body.options[0].votes).toBe(1);
   });
 
   it("returns 403 on POST admin reset-all when NODE_ENV is production", async () => {

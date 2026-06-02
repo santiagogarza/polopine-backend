@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { Poll, PollOption } from "./types.js";
 
-const polls = new Map<string, Poll>();
+type StoredPoll = Poll & {
+  voters: Map<string, string>;
+};
+
+const polls = new Map<string, StoredPoll>();
+
+function toPublicPoll(poll: StoredPoll): Poll {
+  const { voters: _voters, ...publicPoll } = poll;
+  return publicPoll;
+}
 
 export function createPoll(question: string, optionTexts: string[]): Poll {
   const options: PollOption[] = optionTexts.map((text) => ({
@@ -10,22 +19,28 @@ export function createPoll(question: string, optionTexts: string[]): Poll {
     votes: 0,
   }));
 
-  const poll: Poll = {
+  const poll: StoredPoll = {
     id: randomUUID(),
     question,
     options,
     createdAt: new Date().toISOString(),
+    voters: new Map(),
   };
 
   polls.set(poll.id, poll);
-  return poll;
+  return toPublicPoll(poll);
 }
 
 export function getPoll(id: string): Poll | undefined {
-  return polls.get(id);
+  const poll = polls.get(id);
+  return poll ? toPublicPoll(poll) : undefined;
 }
 
-export function vote(pollId: string, optionId: string): Poll | undefined {
+export function vote(
+  pollId: string,
+  optionId: string,
+  voterId: string,
+): Poll | undefined {
   const poll = polls.get(pollId);
   if (!poll) {
     return undefined;
@@ -36,8 +51,21 @@ export function vote(pollId: string, optionId: string): Poll | undefined {
     return undefined;
   }
 
+  const previousOptionId = poll.voters.get(voterId);
+  if (previousOptionId === optionId) {
+    return toPublicPoll(poll);
+  }
+
+  if (previousOptionId) {
+    const previousOption = poll.options.find((o) => o.id === previousOptionId);
+    if (previousOption) {
+      previousOption.votes = Math.max(0, previousOption.votes - 1);
+    }
+  }
+
   option.votes += 1;
-  return poll;
+  poll.voters.set(voterId, optionId);
+  return toPublicPoll(poll);
 }
 
 export function deletePoll(id: string): boolean {
@@ -53,14 +81,15 @@ export function resetPollVotes(id: string): Poll | undefined {
   for (const option of poll.options) {
     option.votes = 0;
   }
+  poll.voters.clear();
 
-  return poll;
+  return toPublicPoll(poll);
 }
 
 export function listPolls(): Poll[] {
   return [...polls.values()].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
-  );
+  ).map(toPublicPoll);
 }
 
 const SEED_POLL_DEFS: Array<{ question: string; options: string[] }> = [
@@ -105,11 +134,12 @@ function insertSeededPoll(
     votes: 0,
   }));
 
-  const poll: Poll = {
+  const poll: StoredPoll = {
     id: randomUUID(),
     question,
     options,
     createdAt,
+    voters: new Map(),
   };
 
   polls.set(poll.id, poll);
