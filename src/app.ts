@@ -81,6 +81,99 @@ app.get("/polls/:id", (req: Request, res: Response) => {
   res.json(poll);
 });
 
+const MAX_OPTION_TEXT_LENGTH = 80;
+
+app.post(
+  "/polls/:id/options",
+  requireVoterId,
+  (req: Request, res: Response) => {
+    const { text } = req.body as { text?: unknown };
+
+    if (typeof text !== "string") {
+      res.status(400).json({ error: "text must be a non-empty string" });
+      return;
+    }
+
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      res.status(400).json({ error: "text must be a non-empty string" });
+      return;
+    }
+
+    if (trimmed.length > MAX_OPTION_TEXT_LENGTH) {
+      res
+        .status(400)
+        .json({
+          error: `text must be ${MAX_OPTION_TEXT_LENGTH} characters or fewer`,
+        });
+      return;
+    }
+
+    const result = store.addOption(
+      req.params.id,
+      trimmed,
+      res.locals.voterId as string,
+    );
+
+    if (!result.ok) {
+      if (result.reason === "not_found") {
+        res.status(404).json({ error: "Poll not found" });
+        return;
+      }
+      if (result.reason === "disabled") {
+        res
+          .status(403)
+          .json({ error: "This poll does not accept voter-added options" });
+        return;
+      }
+      if (result.reason === "duplicate") {
+        res
+          .status(409)
+          .json({ error: "An option with this text already exists" });
+        return;
+      }
+    } else {
+      res.status(201).json(result.poll);
+      return;
+    }
+  },
+);
+
+app.delete(
+  "/polls/:id/options/:optionId",
+  requireAdmin,
+  (req: Request, res: Response) => {
+    const result = store.removeOption(req.params.id, req.params.optionId);
+    if (!result.ok) {
+      if (result.reason === "poll_not_found") {
+        res.status(404).json({ error: "Poll not found" });
+        return;
+      }
+      res.status(404).json({ error: "Option not found" });
+      return;
+    }
+    res.json(result.poll);
+  },
+);
+
+app.patch("/polls/:id", requireAdmin, (req: Request, res: Response) => {
+  const { allowVoterOptions } = req.body as { allowVoterOptions?: unknown };
+
+  if (typeof allowVoterOptions !== "boolean") {
+    res
+      .status(400)
+      .json({ error: "allowVoterOptions must be a boolean" });
+    return;
+  }
+
+  const poll = store.setAllowVoterOptions(req.params.id, allowVoterOptions);
+  if (!poll) {
+    res.status(404).json({ error: "Poll not found" });
+    return;
+  }
+  res.json(poll);
+});
+
 app.post("/polls/:id/vote", requireVoterId, (req: Request, res: Response) => {
   const { optionId } = req.body as { optionId?: unknown };
 

@@ -8,6 +8,7 @@ export function createPoll(question: string, optionTexts: string[]): Poll {
     id: randomUUID(),
     text,
     votes: 0,
+    authorVoterId: null,
   }));
 
   const poll: Poll = {
@@ -15,6 +16,7 @@ export function createPoll(question: string, optionTexts: string[]): Poll {
     question,
     options,
     createdAt: new Date().toISOString(),
+    allowVoterOptions: true,
   };
 
   polls.set(poll.id, poll);
@@ -63,6 +65,88 @@ export function listPolls(): Poll[] {
   );
 }
 
+/**
+ * Result envelope for {@link addOption}. Lets the route layer translate
+ * store-level reasons into the right HTTP status code without throwing.
+ */
+export type AddOptionResult =
+  | { ok: true; poll: Poll }
+  | {
+      ok: false;
+      reason: "not_found" | "disabled" | "duplicate";
+    };
+
+export function addOption(
+  pollId: string,
+  text: string,
+  voterId: string,
+): AddOptionResult {
+  const poll = polls.get(pollId);
+  if (!poll) {
+    return { ok: false, reason: "not_found" };
+  }
+  if (!poll.allowVoterOptions) {
+    return { ok: false, reason: "disabled" };
+  }
+
+  const normalized = text.toLowerCase();
+  const duplicate = poll.options.some(
+    (o) => o.text.toLowerCase() === normalized,
+  );
+  if (duplicate) {
+    return { ok: false, reason: "duplicate" };
+  }
+
+  const option: PollOption = {
+    id: randomUUID(),
+    text,
+    votes: 0,
+    authorVoterId: voterId,
+  };
+  poll.options.push(option);
+  return { ok: true, poll };
+}
+
+/**
+ * Removes an option from a poll. Returns the updated poll, or `undefined`
+ * if the poll doesn't exist. Returns `{ poll, removed: false }` shape via
+ * the discriminated union below when the option id wasn't on the poll —
+ * letting the route layer choose 404 vs 200.
+ */
+export type RemoveOptionResult =
+  | { ok: true; poll: Poll }
+  | { ok: false; reason: "poll_not_found" | "option_not_found" };
+
+export function removeOption(
+  pollId: string,
+  optionId: string,
+): RemoveOptionResult {
+  const poll = polls.get(pollId);
+  if (!poll) {
+    return { ok: false, reason: "poll_not_found" };
+  }
+
+  const index = poll.options.findIndex((o) => o.id === optionId);
+  if (index === -1) {
+    return { ok: false, reason: "option_not_found" };
+  }
+
+  poll.options.splice(index, 1);
+  return { ok: true, poll };
+}
+
+export function setAllowVoterOptions(
+  pollId: string,
+  allow: boolean,
+): Poll | undefined {
+  const poll = polls.get(pollId);
+  if (!poll) {
+    return undefined;
+  }
+  poll.allowVoterOptions = allow;
+  return poll;
+}
+
 const SEED_POLL_DEFS: Array<{ question: string; options: string[] }> = [
   {
     question: "What continent are you from?",
@@ -103,6 +187,7 @@ function insertSeededPoll(
     id: randomUUID(),
     text,
     votes: 0,
+    authorVoterId: null,
   }));
 
   const poll: Poll = {
@@ -110,6 +195,7 @@ function insertSeededPoll(
     question,
     options,
     createdAt,
+    allowVoterOptions: true,
   };
 
   polls.set(poll.id, poll);
