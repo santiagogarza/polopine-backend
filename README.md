@@ -43,12 +43,29 @@ API: `http://localhost:8080` (default). Three starter polls are seeded on boot; 
 | `GET` | `/polls` | List polls (newest first) |
 | `POST` | `/polls` | Create poll (`{ question, options: string[] }`) |
 | `GET` | `/polls/:id` | Get poll |
-| `POST` | `/polls/:id/vote` | Vote (`{ optionId }`) |
+| `POST` | `/polls/:id/vote` | Vote (`{ optionId }`, requires `x-voter-id`) |
+| `POST` | `/polls/:id/options` | Add a voter-authored option (`{ text }`, requires `x-voter-id`) |
+| `DELETE` | `/polls/:id/options/:optionId` | Delete an option (author via `x-voter-id` **or** admin via `x-admin-key`) |
 | `GET` | `/polls/:id/results` | Results (`totalVotes`, options sorted by votes desc) |
 | `GET` | `/health` | `{ status: 'ok', version }` |
 | `DELETE` | `/polls/:id` | Admin only (`x-admin-key` header) |
+| `POST` | `/polls/:id/reset-votes` | Admin only (`x-admin-key` header) |
+| `POST` | `/admin/verify` | Check admin key (204 / 401, rate-limited) |
 
 Errors: JSON `{ "error": "..." }` with an appropriate status code.
+
+### Option authorship (POL-10)
+
+Each `PollOption` has an optional `authorId`. It is set to the voter id of
+whoever added the option via `POST /polls/:id/options`. Options created when
+the poll itself was created (and the three seeded polls) have no `authorId`
+and can only be removed by an admin. Per-poll rules:
+
+- Options are capped at **12** per poll.
+- Option text is trimmed and limited to **80 characters**.
+- Duplicate text (case-insensitive after trim) within the same poll returns `409`.
+- Options that have any recorded votes are immutable (`409`) — including for admins.
+- A poll must always have at least 2 options; deleting below that returns `409`.
 
 ## Deploy (production)
 

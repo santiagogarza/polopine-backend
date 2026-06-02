@@ -544,6 +544,312 @@ describe("polls API", () => {
     expect(res.body.error).toBe("Unauthorized");
   });
 
+  describe("POL-10 option authorship", () => {
+    it("POST /polls/:id/options adds a voter-authored option (200)", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Lunch?", options: ["Pizza", "Salad"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+
+      const res = await request(app)
+        .post(`/polls/${pollId}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "  Tacos  " })
+        .expect(200);
+
+      expect(res.body.options).toHaveLength(3);
+      const added = res.body.options[2] as {
+        text: string;
+        votes: number;
+        authorId: string;
+      };
+      expect(added.text).toBe("Tacos");
+      expect(added.votes).toBe(0);
+      expect(added.authorId).toBe(VOTER_ID);
+    });
+
+    it("POST /polls/:id/options requires x-voter-id header (400)", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+
+      const res = await request(app)
+        .post(`/polls/${pollId}/options`)
+        .send({ text: "C" })
+        .expect(400);
+      expect(res.body.error).toBe("x-voter-id header required");
+    });
+
+    it.each([
+      {
+        name: "missing text",
+        body: {},
+        error: "text must be a non-empty string",
+      },
+      {
+        name: "blank text",
+        body: { text: "   " },
+        error: "text must be a non-empty string",
+      },
+      {
+        name: "non-string text",
+        body: { text: 42 },
+        error: "text must be a non-empty string",
+      },
+      {
+        name: "text over 80 chars",
+        body: { text: "x".repeat(81) },
+        error: "text must be at most 80 characters",
+      },
+    ])(
+      "POST /polls/:id/options returns 400 when $name",
+      async ({ body, error }) => {
+        const createRes = await request(app)
+          .post("/polls")
+          .send({ question: "Q?", options: ["A", "B"] })
+          .expect(201);
+        const pollId = createRes.body.id as string;
+
+        const res = await request(app)
+          .post(`/polls/${pollId}/options`)
+          .set("x-voter-id", VOTER_ID)
+          .send(body)
+          .expect(400);
+        expect(res.body.error).toBe(error);
+      },
+    );
+
+    it("POST /polls/:id/options returns 404 for unknown poll", async () => {
+      const res = await request(app)
+        .post("/polls/00000000-0000-0000-0000-000000000000/options")
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "New" })
+        .expect(404);
+      expect(res.body.error).toBe("Poll not found");
+    });
+
+    it("POST /polls/:id/options rejects duplicate text (case-insensitive) with 409", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Lunch?", options: ["Tacos", "Pizza"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+
+      const res = await request(app)
+        .post(`/polls/${pollId}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: " TACOS " })
+        .expect(409);
+      expect(res.body.error).toBe(
+        "An option with this text already exists in this poll",
+      );
+    });
+
+    it("POST /polls/:id/options rejects past per-poll cap with 422", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Big?", options: ["1", "2"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+
+      for (let i = 3; i <= 12; i++) {
+        await request(app)
+          .post(`/polls/${pollId}/options`)
+          .set("x-voter-id", VOTER_ID)
+          .send({ text: `opt-${i}` })
+          .expect(200);
+      }
+
+      const res = await request(app)
+        .post(`/polls/${pollId}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "opt-13" })
+        .expect(422);
+      expect(res.body.error).toBe("Polls are limited to 12 options");
+    });
+
+    it("DELETE /polls/:id/options/:optionId: author can delete their own zero-vote option (200)", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+
+      const addRes = await request(app)
+        .post(`/polls/${pollId}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "C" })
+        .expect(200);
+      const optionId = addRes.body.options[2].id as string;
+
+      const delRes = await request(app)
+        .delete(`/polls/${pollId}/options/${optionId}`)
+        .set("x-voter-id", VOTER_ID)
+        .expect(200);
+
+      expect(delRes.body.options).toHaveLength(2);
+      expect(delRes.body.options.map((o: { text: string }) => o.text)).toEqual([
+        "A",
+        "B",
+      ]);
+    });
+
+    it("DELETE /polls/:id/options/:optionId: non-author voter gets 403", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+
+      const addRes = await request(app)
+        .post(`/polls/${pollId}/options`)
+        .set("x-voter-id", "voter-alice")
+        .send({ text: "C" })
+        .expect(200);
+      const optionId = addRes.body.options[2].id as string;
+
+      const res = await request(app)
+        .delete(`/polls/${pollId}/options/${optionId}`)
+        .set("x-voter-id", "voter-bob")
+        .expect(403);
+      expect(res.body.error).toBe(
+        "Only the option's author or an admin can delete it",
+      );
+    });
+
+    it("DELETE /polls/:id/options/:optionId: admin can delete any zero-vote option", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B", "C"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+      const optionId = createRes.body.options[0].id as string;
+
+      const res = await request(app)
+        .delete(`/polls/${pollId}/options/${optionId}`)
+        .set("x-admin-key", ADMIN_KEY)
+        .expect(200);
+      expect(res.body.options).toHaveLength(2);
+    });
+
+    it("DELETE /polls/:id/options/:optionId: refuses to delete option with votes (409)", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B", "C"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+      const optionId = createRes.body.options[0].id as string;
+
+      await request(app)
+        .post(`/polls/${pollId}/vote`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ optionId })
+        .expect(200);
+
+      const res = await request(app)
+        .delete(`/polls/${pollId}/options/${optionId}`)
+        .set("x-admin-key", ADMIN_KEY)
+        .expect(409);
+      expect(res.body.error).toBe(
+        "Cannot delete an option that already has votes",
+      );
+    });
+
+    it("DELETE /polls/:id/options/:optionId: refuses to drop poll below 2 options (409)", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+      const optionId = createRes.body.options[0].id as string;
+
+      const res = await request(app)
+        .delete(`/polls/${pollId}/options/${optionId}`)
+        .set("x-admin-key", ADMIN_KEY)
+        .expect(409);
+      expect(res.body.error).toBe("A poll must keep at least 2 options");
+    });
+
+    it("DELETE /polls/:id/options/:optionId: 401 when neither voter id nor admin key provided", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B", "C"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+      const optionId = createRes.body.options[0].id as string;
+
+      const res = await request(app)
+        .delete(`/polls/${pollId}/options/${optionId}`)
+        .expect(401);
+      expect(res.body.error).toBe(
+        "x-voter-id or valid x-admin-key required",
+      );
+    });
+
+    it("DELETE /polls/:id/options/:optionId: 404 for unknown poll", async () => {
+      const res = await request(app)
+        .delete(
+          "/polls/00000000-0000-0000-0000-000000000000/options/whatever",
+        )
+        .set("x-admin-key", ADMIN_KEY)
+        .expect(404);
+      expect(res.body.error).toBe("Poll not found");
+    });
+
+    it("DELETE /polls/:id/options/:optionId: 404 for unknown option", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B", "C"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+
+      const res = await request(app)
+        .delete(
+          `/polls/${pollId}/options/00000000-0000-0000-0000-000000000000`,
+        )
+        .set("x-admin-key", ADMIN_KEY)
+        .expect(404);
+      expect(res.body.error).toBe("Option not found");
+    });
+
+    it("DELETE /polls/:id/options/:optionId: 400 when x-voter-id is too long", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B", "C"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+      const optionId = createRes.body.options[0].id as string;
+
+      const res = await request(app)
+        .delete(`/polls/${pollId}/options/${optionId}`)
+        .set("x-voter-id", "v".repeat(129))
+        .expect(400);
+      expect(res.body.error).toBe("x-voter-id header too long");
+    });
+
+    it("GET /polls/:id returns options with authorId for voter-added options only", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({ question: "Q?", options: ["A", "B"] })
+        .expect(201);
+      const pollId = createRes.body.id as string;
+
+      await request(app)
+        .post(`/polls/${pollId}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "C" })
+        .expect(200);
+
+      const getRes = await request(app).get(`/polls/${pollId}`).expect(200);
+      expect(getRes.body.options[0].authorId).toBeUndefined();
+      expect(getRes.body.options[1].authorId).toBeUndefined();
+      expect(getRes.body.options[2].authorId).toBe(VOTER_ID);
+    });
+  });
+
   it("POST /admin/verify rate-limits repeated failures from the same client", async () => {
     // Use a unique forwarded IP so we don't share a bucket with the other
     // /admin/verify tests above (the rate limiter is per-process state).

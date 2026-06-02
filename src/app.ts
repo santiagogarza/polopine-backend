@@ -9,6 +9,7 @@ import { requireLocal } from "./middleware/requireLocal.js";
 import { requireVoterId } from "./middleware/requireVoterId.js";
 import * as store from "./store.js";
 import type { PollResults } from "./types.js";
+import { MAX_OPTION_TEXT_LENGTH, MAX_OPTIONS_PER_POLL } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(
@@ -104,6 +105,117 @@ app.post("/polls/:id/vote", requireVoterId, (req: Request, res: Response) => {
   const updated = store.vote(req.params.id, optionId);
   res.json(updated);
 });
+
+app.post(
+  "/polls/:id/options",
+  requireVoterId,
+  (req: Request, res: Response) => {
+    const { text } = req.body as { text?: unknown };
+    const voterId = res.locals.voterId as string;
+
+    if (!isNonEmptyString(text)) {
+      res.status(400).json({ error: "text must be a non-empty string" });
+      return;
+    }
+
+    const trimmed = text.trim();
+    if (trimmed.length > MAX_OPTION_TEXT_LENGTH) {
+      res.status(400).json({
+        error: `text must be at most ${MAX_OPTION_TEXT_LENGTH} characters`,
+      });
+      return;
+    }
+
+    const result = store.addOption(req.params.id, trimmed, voterId);
+    if (!result.ok) {
+      switch (result.error) {
+        case "poll_not_found":
+          res.status(404).json({ error: "Poll not found" });
+          return;
+        case "duplicate":
+          res.status(409).json({
+            error: "An option with this text already exists in this poll",
+          });
+          return;
+        case "too_many_options":
+          res.status(422).json({
+            error: `Polls are limited to ${MAX_OPTIONS_PER_POLL} options`,
+          });
+          return;
+      }
+    }
+    res.status(200).json(result.poll);
+  },
+);
+
+/**
+ * Deletes an option. Authorized either by `x-voter-id` (must match the
+ * option's `authorId`) or `x-admin-key`. Returns the updated poll. Options
+ * that have already received votes are immutable to keep recorded counts
+ * honest — even for admins, who can fall back to `POST /polls/:id/reset-votes`
+ * + `DELETE` to start over.
+ */
+app.delete(
+  "/polls/:id/options/:optionId",
+  (req: Request, res: Response) => {
+    const providedAdmin = req.header("x-admin-key");
+    const adminKey = process.env.ADMIN_API_KEY;
+    const isAdmin =
+      typeof providedAdmin === "string" &&
+      typeof adminKey === "string" &&
+      providedAdmin === adminKey;
+
+    const rawVoter = req.header("x-voter-id");
+    const voterId =
+      typeof rawVoter === "string" && rawVoter.trim().length > 0
+        ? rawVoter.trim()
+        : undefined;
+
+    if (!isAdmin && !voterId) {
+      res
+        .status(401)
+        .json({ error: "x-voter-id or valid x-admin-key required" });
+      return;
+    }
+
+    if (voterId !== undefined && voterId.length > 128) {
+      res.status(400).json({ error: "x-voter-id header too long" });
+      return;
+    }
+
+    const result = store.deleteOption(req.params.id, req.params.optionId, {
+      voterId,
+      isAdmin,
+    });
+
+    if (!result.ok) {
+      switch (result.error) {
+        case "poll_not_found":
+          res.status(404).json({ error: "Poll not found" });
+          return;
+        case "option_not_found":
+          res.status(404).json({ error: "Option not found" });
+          return;
+        case "forbidden":
+          res.status(403).json({
+            error: "Only the option's author or an admin can delete it",
+          });
+          return;
+        case "has_votes":
+          res.status(409).json({
+            error: "Cannot delete an option that already has votes",
+          });
+          return;
+        case "would_leave_too_few_options":
+          res.status(409).json({
+            error: "A poll must keep at least 2 options",
+          });
+          return;
+      }
+    }
+    res.status(200).json(result.poll);
+  },
+);
 
 app.get("/polls/:id/results", (req: Request, res: Response) => {
   const poll = store.getPoll(req.params.id);
