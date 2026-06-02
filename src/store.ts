@@ -3,6 +3,12 @@ import type { Poll, PollOption } from "./types.js";
 
 const polls = new Map<string, Poll>();
 
+// Parallel map kept alongside `polls` so the on-the-wire Poll shape stays
+// JSON-friendly (Map values stringify to `{}`). Keyed by pollId -> voterId ->
+// optionId, this lets `vote(...)` upsert a voter's choice for POL-7 without
+// double-counting or orphaning votes when a voter changes their mind.
+const pollVoters = new Map<string, Map<string, string>>();
+
 export function createPoll(question: string, optionTexts: string[]): Poll {
   const options: PollOption[] = optionTexts.map((text) => ({
     id: randomUUID(),
@@ -18,6 +24,7 @@ export function createPoll(question: string, optionTexts: string[]): Poll {
   };
 
   polls.set(poll.id, poll);
+  pollVoters.set(poll.id, new Map());
   return poll;
 }
 
@@ -25,7 +32,21 @@ export function getPoll(id: string): Poll | undefined {
   return polls.get(id);
 }
 
-export function vote(pollId: string, optionId: string): Poll | undefined {
+/**
+ * Upserts the given voter's choice on a poll.
+ *
+ * - First vote: increments the chosen option and records the voter.
+ * - Same option as before: no-op (idempotent — guards against rapid
+ *   double-clicks on the "Vote for this instead" affordance).
+ * - Different option: decrements the previous option, increments the new
+ *   one, and updates the voter's recorded choice. Safe in single-threaded
+ *   Node because both reads and writes happen synchronously.
+ */
+export function vote(
+  pollId: string,
+  optionId: string,
+  voterId: string,
+): Poll | undefined {
   const poll = polls.get(pollId);
   if (!poll) {
     return undefined;
@@ -36,11 +57,31 @@ export function vote(pollId: string, optionId: string): Poll | undefined {
     return undefined;
   }
 
+  let voters = pollVoters.get(pollId);
+  if (!voters) {
+    voters = new Map();
+    pollVoters.set(pollId, voters);
+  }
+
+  const previousOptionId = voters.get(voterId);
+  if (previousOptionId === optionId) {
+    return poll;
+  }
+
+  if (previousOptionId !== undefined) {
+    const previousOption = poll.options.find((o) => o.id === previousOptionId);
+    if (previousOption && previousOption.votes > 0) {
+      previousOption.votes -= 1;
+    }
+  }
+
   option.votes += 1;
+  voters.set(voterId, optionId);
   return poll;
 }
 
 export function deletePoll(id: string): boolean {
+  pollVoters.delete(id);
   return polls.delete(id);
 }
 
@@ -53,6 +94,8 @@ export function resetPollVotes(id: string): Poll | undefined {
   for (const option of poll.options) {
     option.votes = 0;
   }
+
+  pollVoters.set(id, new Map());
 
   return poll;
 }
@@ -113,6 +156,7 @@ function insertSeededPoll(
   };
 
   polls.set(poll.id, poll);
+  pollVoters.set(poll.id, new Map());
 }
 
 export function seed(): void {
@@ -125,4 +169,5 @@ export function seed(): void {
 /** Reset store between tests. */
 export function clearPolls(): void {
   polls.clear();
+  pollVoters.clear();
 }

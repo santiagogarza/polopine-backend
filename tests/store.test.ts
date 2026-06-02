@@ -7,13 +7,75 @@ describe("store", () => {
   });
 
   it("vote returns undefined for missing poll", () => {
-    expect(store.vote("missing-poll", "missing-option")).toBeUndefined();
+    expect(store.vote("missing-poll", "missing-option", "voter-1")).toBeUndefined();
   });
 
   it("vote returns undefined for missing option on existing poll", () => {
     const poll = store.createPoll("Q?", ["A", "B"]);
 
-    expect(store.vote(poll.id, "missing-option")).toBeUndefined();
+    expect(store.vote(poll.id, "missing-option", "voter-1")).toBeUndefined();
+  });
+
+  it("vote is idempotent when the same voter picks the same option twice", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+
+    store.vote(poll.id, optionA, "voter-1");
+    store.vote(poll.id, optionA, "voter-1");
+
+    const after = store.getPoll(poll.id);
+    expect(after?.options[0].votes).toBe(1);
+    expect(after?.options[1].votes).toBe(0);
+  });
+
+  it("vote upserts when a voter switches from one option to another", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+    const optionB = poll.options[1].id;
+
+    store.vote(poll.id, optionA, "voter-1");
+    store.vote(poll.id, optionB, "voter-1");
+
+    const after = store.getPoll(poll.id);
+    expect(after?.options[0].votes).toBe(0);
+    expect(after?.options[1].votes).toBe(1);
+  });
+
+  it("vote keeps distinct voters independent when one switches", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+    const optionB = poll.options[1].id;
+
+    store.vote(poll.id, optionA, "voter-1");
+    store.vote(poll.id, optionB, "voter-2");
+
+    let after = store.getPoll(poll.id);
+    expect(after?.options[0].votes).toBe(1);
+    expect(after?.options[1].votes).toBe(1);
+
+    // voter-1 switches; voter-2 should be untouched.
+    store.vote(poll.id, optionB, "voter-1");
+
+    after = store.getPoll(poll.id);
+    expect(after?.options[0].votes).toBe(0);
+    expect(after?.options[1].votes).toBe(2);
+  });
+
+  it("resetPollVotes clears the voter map so a prior voter can vote fresh", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+    const optionB = poll.options[1].id;
+
+    store.vote(poll.id, optionA, "voter-1");
+    store.resetPollVotes(poll.id);
+
+    // Without map-clear this would be a same-option no-op and leave votes at 0.
+    store.vote(poll.id, optionA, "voter-1");
+    store.vote(poll.id, optionB, "voter-1");
+
+    const after = store.getPoll(poll.id);
+    expect(after?.options[0].votes).toBe(0);
+    expect(after?.options[1].votes).toBe(1);
   });
 
   it("deletePoll returns false for missing poll", () => {

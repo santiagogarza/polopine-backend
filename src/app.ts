@@ -101,7 +101,8 @@ app.post("/polls/:id/vote", requireVoterId, (req: Request, res: Response) => {
     return;
   }
 
-  const updated = store.vote(req.params.id, optionId);
+  const voterId = res.locals.voterId as string;
+  const updated = store.vote(req.params.id, optionId, voterId);
   res.json(updated);
 });
 

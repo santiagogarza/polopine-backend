@@ -69,19 +69,20 @@ describe("polls API", () => {
     const opt0 = createRes.body.options[0].id as string;
     const opt1 = createRes.body.options[1].id as string;
 
+    // POL-7: each distinct voter-id counts once; two voters pick opt0, one picks opt1.
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-lunch-a")
       .send({ optionId: opt0 })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-lunch-b")
       .send({ optionId: opt0 })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-lunch-c")
       .send({ optionId: opt1 })
       .expect(200);
 
@@ -138,19 +139,20 @@ describe("polls API", () => {
     const midId = createRes.body.options[1].id as string;
     const highId = createRes.body.options[2].id as string;
 
+    // POL-7: distinct voter-ids so each vote actually accumulates.
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-rank-a")
       .send({ optionId: highId })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-rank-b")
       .send({ optionId: highId })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-rank-c")
       .send({ optionId: midId })
       .expect(200);
 
@@ -542,6 +544,127 @@ describe("polls API", () => {
   it("POST /admin/verify returns 401 without admin key header", async () => {
     const res = await request(app).post("/admin/verify").expect(401);
     expect(res.body.error).toBe("Unauthorized");
+  });
+
+  it("POST /polls/:id/vote is idempotent when the same voter picks the same option twice", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({ question: "Same option twice?", options: ["A", "B"] })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionA })
+      .expect(200);
+
+    const second = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionA })
+      .expect(200);
+
+    expect(second.body.options[0].votes).toBe(1);
+    expect(second.body.options[1].votes).toBe(0);
+  });
+
+  it("POST /polls/:id/vote lets a voter switch their vote (POL-7)", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({ question: "Switch?", options: ["A", "B"] })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionA })
+      .expect(200);
+
+    const switched = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionB })
+      .expect(200);
+
+    expect(switched.body.options[0].votes).toBe(0);
+    expect(switched.body.options[1].votes).toBe(1);
+  });
+
+  it("POST /polls/:id/vote keeps distinct voters independent when one switches", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({ question: "Two voters?", options: ["A", "B"] })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-alpha")
+      .send({ optionId: optionA })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-beta")
+      .send({ optionId: optionB })
+      .expect(200);
+
+    // voter-alpha switches to B; voter-beta should not move.
+    const after = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-alpha")
+      .send({ optionId: optionB })
+      .expect(200);
+
+    expect(after.body.options[0].votes).toBe(0);
+    expect(after.body.options[1].votes).toBe(2);
+
+    const results = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+    expect(results.body.totalVotes).toBe(2);
+  });
+
+  it("POST /polls/:id/reset-votes clears the voter map so a prior voter can vote again", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({ question: "Reset clears voters?", options: ["A", "B"] })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionA })
+      .expect(200);
+
+    await request(app)
+      .post(`/polls/${pollId}/reset-votes`)
+      .set("x-admin-key", ADMIN_KEY)
+      .expect(200);
+
+    // Same voter, same option — without map-clear this would be the
+    // idempotent no-op branch and totals would stay at 0.
+    const fresh = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionB })
+      .expect(200);
+
+    expect(fresh.body.options[0].votes).toBe(0);
+    expect(fresh.body.options[1].votes).toBe(1);
   });
 
   it("POST /admin/verify rate-limits repeated failures from the same client", async () => {
