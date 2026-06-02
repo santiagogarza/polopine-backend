@@ -5,6 +5,8 @@ services:
     name: polopine-api
     runtime: node
     plan: free
+    # Repo root must be the service root (do not set Root Directory to "src" in the dashboard).
+    rootDir: .
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /health

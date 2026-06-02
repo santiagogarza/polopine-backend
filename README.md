@@ -58,6 +58,7 @@ Recommended: **[Render](https://render.com)** using [`render.yaml`](render.yaml)
 
 1. Push this repo to [github.com/santiagogarza/polopine-backend](https://github.com/santiagogarza/polopine-backend).
 2. In Render: **New → Blueprint** → select the repo → deploy `polopine-api`.
+3. In the service **Settings**, leave **Root Directory** empty (repo root). If it is set to `src`, the start command will look for the wrong `dist/server.js` path.
 3. Copy the public URL (e.g. `https://polopine-api.onrender.com`).
 4. In the **frontend** Vercel project, set `VITE_API_URL` to that URL (no trailing slash).
 
