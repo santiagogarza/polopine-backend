@@ -28,6 +28,10 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function normalizeOptionText(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", version: packageJson.version });
 });
@@ -105,6 +109,52 @@ app.post("/polls/:id/vote", requireVoterId, (req: Request, res: Response) => {
   res.json(updated);
 });
 
+app.post(
+  "/polls/:id/options",
+  requireVoterId,
+  (req: Request, res: Response) => {
+    const { text } = req.body as { text?: unknown };
+
+    if (typeof text !== "string" || text.trim().length === 0) {
+      res.status(400).json({ error: "text must be a non-empty string" });
+      return;
+    }
+
+    const trimmedText = text.trim();
+    if (trimmedText.length > 80) {
+      res.status(400).json({ error: "text must be 80 characters or fewer" });
+      return;
+    }
+
+    const poll = store.getPoll(req.params.id);
+    if (!poll) {
+      res.status(404).json({ error: "Poll not found" });
+      return;
+    }
+
+    if (!poll.allowVoterOptions) {
+      res.status(403).json({ error: "Voter-added options are disabled" });
+      return;
+    }
+
+    const normalizedText = normalizeOptionText(trimmedText);
+    const duplicate = poll.options.some(
+      (option) => normalizeOptionText(option.text) === normalizedText,
+    );
+    if (duplicate) {
+      res.status(409).json({ error: "Option already exists" });
+      return;
+    }
+
+    const updated = store.addOption(
+      req.params.id,
+      trimmedText,
+      res.locals.voterId as string,
+    );
+    res.status(201).json(updated);
+  },
+);
+
 app.get("/polls/:id/results", (req: Request, res: Response) => {
   const poll = store.getPoll(req.params.id);
   if (!poll) {
@@ -117,6 +167,7 @@ app.get("/polls/:id/results", (req: Request, res: Response) => {
   const results: PollResults = {
     question: poll.question,
     options: sortedOptions,
+    allowVoterOptions: poll.allowVoterOptions,
     totalVotes,
   };
   res.json(results);
@@ -144,6 +195,49 @@ app.delete("/polls/:id", requireAdmin, (req: Request, res: Response) => {
   }
   res.status(204).send();
 });
+
+app.patch("/polls/:id", requireAdmin, (req: Request, res: Response) => {
+  const { allowVoterOptions } = req.body as { allowVoterOptions?: unknown };
+
+  if (typeof allowVoterOptions !== "boolean") {
+    res.status(400).json({ error: "allowVoterOptions must be a boolean" });
+    return;
+  }
+
+  const poll = store.setAllowVoterOptions(
+    req.params.id,
+    allowVoterOptions,
+  );
+  if (!poll) {
+    res.status(404).json({ error: "Poll not found" });
+    return;
+  }
+
+  res.json(poll);
+});
+
+app.delete(
+  "/polls/:id/options/:optionId",
+  requireAdmin,
+  (req: Request, res: Response) => {
+    const poll = store.getPoll(req.params.id);
+    if (!poll) {
+      res.status(404).json({ error: "Poll not found" });
+      return;
+    }
+
+    const hasOption = poll.options.some(
+      (option) => option.id === req.params.optionId,
+    );
+    if (!hasOption) {
+      res.status(404).json({ error: "Option not found" });
+      return;
+    }
+
+    const updated = store.deleteOption(req.params.id, req.params.optionId);
+    res.json(updated);
+  },
+);
 
 app.post(
   "/polls/:id/reset-votes",

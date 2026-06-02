@@ -8,12 +8,14 @@ export function createPoll(question: string, optionTexts: string[]): Poll {
     id: randomUUID(),
     text,
     votes: 0,
+    authorVoterId: null,
   }));
 
   const poll: Poll = {
     id: randomUUID(),
     question,
     options,
+    allowVoterOptions: true,
     createdAt: new Date().toISOString(),
   };
 
@@ -37,6 +39,53 @@ export function vote(pollId: string, optionId: string): Poll | undefined {
   }
 
   option.votes += 1;
+  return poll;
+}
+
+export function addOption(
+  pollId: string,
+  text: string,
+  authorVoterId: string,
+): Poll | undefined {
+  const poll = polls.get(pollId);
+  if (!poll) {
+    return undefined;
+  }
+
+  poll.options.push({
+    id: randomUUID(),
+    text,
+    votes: 0,
+    authorVoterId,
+  });
+  return poll;
+}
+
+export function deleteOption(pollId: string, optionId: string): Poll | undefined {
+  const poll = polls.get(pollId);
+  if (!poll) {
+    return undefined;
+  }
+
+  const optionIndex = poll.options.findIndex((option) => option.id === optionId);
+  if (optionIndex === -1) {
+    return undefined;
+  }
+
+  poll.options.splice(optionIndex, 1);
+  return poll;
+}
+
+export function setAllowVoterOptions(
+  pollId: string,
+  allowVoterOptions: boolean,
+): Poll | undefined {
+  const poll = polls.get(pollId);
+  if (!poll) {
+    return undefined;
+  }
+
+  poll.allowVoterOptions = allowVoterOptions;
   return poll;
 }
 
@@ -103,12 +152,14 @@ function insertSeededPoll(
     id: randomUUID(),
     text,
     votes: 0,
+    authorVoterId: null,
   }));
 
   const poll: Poll = {
     id: randomUUID(),
     question,
     options,
+    allowVoterOptions: true,
     createdAt,
   };
 

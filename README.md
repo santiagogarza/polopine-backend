@@ -24,7 +24,7 @@ API: `http://localhost:8080` (default). Three starter polls are seeded on boot; 
 | Variable | Sensitive | Description |
 |----------|-----------|-------------|
 | `PORT` | No | HTTP port (default `8080`; Render sets this automatically) |
-| `ADMIN_API_KEY` | **Yes** | Secret for `DELETE /polls/:id` via `x-admin-key`. Never log or commit real values. |
+| `ADMIN_API_KEY` | **Yes** | Secret for admin routes via `x-admin-key`. Never log or commit real values. |
 
 ## Scripts
 
@@ -44,9 +44,12 @@ API: `http://localhost:8080` (default). Three starter polls are seeded on boot; 
 | `POST` | `/polls` | Create poll (`{ question, options: string[] }`) |
 | `GET` | `/polls/:id` | Get poll |
 | `POST` | `/polls/:id/vote` | Vote (`{ optionId }`) |
+| `POST` | `/polls/:id/options` | Add voter-authored option (`x-voter-id`, `{ text }`, max 80 chars) |
 | `GET` | `/polls/:id/results` | Results (`totalVotes`, options sorted by votes desc) |
 | `GET` | `/health` | `{ status: 'ok', version }` |
 | `DELETE` | `/polls/:id` | Admin only (`x-admin-key` header) |
+| `PATCH` | `/polls/:id` | Admin only, toggle voter-added options (`{ allowVoterOptions }`) |
+| `DELETE` | `/polls/:id/options/:optionId` | Admin only, hard delete an option |
 
 Errors: JSON `{ "error": "..." }` with an appropriate status code.
 
