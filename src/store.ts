@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
-import type { Poll, PollOption } from "./types.js";
+import {
+  DEFAULT_ACCENT_COLOR,
+  type AccentColor,
+  type Poll,
+  type PollOption,
+} from "./types.js";
 
 const polls = new Map<string, Poll>();
 
-export function createPoll(question: string, optionTexts: string[]): Poll {
+export function createPoll(
+  question: string,
+  optionTexts: string[],
+  accentColor: AccentColor = DEFAULT_ACCENT_COLOR,
+): Poll {
   const options: PollOption[] = optionTexts.map((text) => ({
     id: randomUUID(),
     text,
@@ -13,6 +22,7 @@ export function createPoll(question: string, optionTexts: string[]): Poll {
   const poll: Poll = {
     id: randomUUID(),
     question,
+    accentColor,
     options,
     createdAt: new Date().toISOString(),
   };
@@ -108,6 +118,7 @@ function insertSeededPoll(
   const poll: Poll = {
     id: randomUUID(),
     question,
+    accentColor: DEFAULT_ACCENT_COLOR,
     options,
     createdAt,
   };

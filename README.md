@@ -41,14 +41,14 @@ API: `http://localhost:8080` (default). Three starter polls are seeded on boot; 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/polls` | List polls (newest first) |
-| `POST` | `/polls` | Create poll (`{ question, options: string[] }`) |
+| `POST` | `/polls` | Create poll (`{ question, options: string[], accentColor?: 'orange' \| 'red' \| 'rose' \| 'violet' \| 'indigo' \| 'teal' \| 'green' \| 'amber' }`) |
 | `GET` | `/polls/:id` | Get poll |
 | `POST` | `/polls/:id/vote` | Vote (`{ optionId }`) |
 | `GET` | `/polls/:id/results` | Results (`totalVotes`, options sorted by votes desc) |
 | `GET` | `/health` | `{ status: 'ok', version }` |
 | `DELETE` | `/polls/:id` | Admin only (`x-admin-key` header) |
 
-Errors: JSON `{ "error": "..." }` with an appropriate status code.
+Poll and results responses include the persisted `accentColor` key. Errors: JSON `{ "error": "..." }` with an appropriate status code.
 
 ## Deploy (production)
 

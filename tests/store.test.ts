@@ -16,6 +16,14 @@ describe("store", () => {
     expect(store.vote(poll.id, "missing-option")).toBeUndefined();
   });
 
+  it("stores explicit and default accent colors", () => {
+    const defaultPoll = store.createPoll("Default?", ["A", "B"]);
+    const tealPoll = store.createPoll("Teal?", ["A", "B"], "teal");
+
+    expect(defaultPoll.accentColor).toBe("orange");
+    expect(tealPoll.accentColor).toBe("teal");
+  });
+
   it("deletePoll returns false for missing poll", () => {
     expect(store.deletePoll("missing-poll")).toBe(false);
   });

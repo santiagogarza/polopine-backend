@@ -8,7 +8,7 @@ import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireLocal } from "./middleware/requireLocal.js";
 import { requireVoterId } from "./middleware/requireVoterId.js";
 import * as store from "./store.js";
-import type { PollResults } from "./types.js";
+import { ACCENT_COLORS, DEFAULT_ACCENT_COLOR, type PollResults } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(
@@ -28,14 +28,22 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isAccentColor(value: unknown): value is (typeof ACCENT_COLORS)[number] {
+  return (
+    typeof value === "string" &&
+    (ACCENT_COLORS as readonly string[]).includes(value)
+  );
+}
+
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", version: packageJson.version });
 });
 
 app.post("/polls", (req: Request, res: Response) => {
-  const { question, options } = req.body as {
+  const { question, options, accentColor = DEFAULT_ACCENT_COLOR } = req.body as {
     question?: unknown;
     options?: unknown;
+    accentColor?: unknown;
   };
 
   if (!isNonEmptyString(question)) {
@@ -64,7 +72,14 @@ app.post("/polls", (req: Request, res: Response) => {
     return;
   }
 
-  const poll = store.createPoll(question.trim(), trimmedOptions);
+  if (!isAccentColor(accentColor)) {
+    res.status(400).json({
+      error: `accentColor must be one of: ${ACCENT_COLORS.join(", ")}`,
+    });
+    return;
+  }
+
+  const poll = store.createPoll(question.trim(), trimmedOptions, accentColor);
   res.status(201).json(poll);
 });
 
@@ -116,6 +131,7 @@ app.get("/polls/:id/results", (req: Request, res: Response) => {
   const sortedOptions = [...poll.options].sort((a, b) => b.votes - a.votes);
   const results: PollResults = {
     question: poll.question,
+    accentColor: poll.accentColor,
     options: sortedOptions,
     totalVotes,
   };

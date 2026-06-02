@@ -27,11 +27,40 @@ describe("polls API", () => {
       .expect(201);
 
     expect(res.body.question).toBe("Favorite color?");
+    expect(res.body.accentColor).toBe("orange");
     expect(res.body.options).toHaveLength(2);
     expect(res.body.options[0].votes).toBe(0);
     expect(res.body.options[1].votes).toBe(0);
     expect(res.body.id).toBeTruthy();
     expect(res.body.createdAt).toBeTruthy();
+  });
+
+  it("creates a poll with a valid accent color", async () => {
+    const res = await request(app)
+      .post("/polls")
+      .send({
+        question: "Favorite color?",
+        options: ["Red", "Blue"],
+        accentColor: "violet",
+      })
+      .expect(201);
+
+    expect(res.body.accentColor).toBe("violet");
+  });
+
+  it("rejects invalid accent colors on create", async () => {
+    const res = await request(app)
+      .post("/polls")
+      .send({
+        question: "Favorite color?",
+        options: ["Red", "Blue"],
+        accentColor: "chartreuse",
+      })
+      .expect(400);
+
+    expect(res.body.error).toBe(
+      "accentColor must be one of: orange, red, rose, violet, indigo, teal, green, amber",
+    );
   });
 
   it("increments votes when casting a vote", async () => {
@@ -90,6 +119,7 @@ describe("polls API", () => {
       .expect(200);
 
     expect(resultsRes.body.question).toBe("Lunch?");
+    expect(resultsRes.body.accentColor).toBe("orange");
     expect(resultsRes.body.totalVotes).toBe(3);
     expect(resultsRes.body.options[0].votes).toBe(2);
     expect(resultsRes.body.options[1].votes).toBe(1);
@@ -308,6 +338,7 @@ describe("polls API", () => {
 
     expect(getRes.body.id).toBe(pollId);
     expect(getRes.body.question).toBe("Exists?");
+    expect(getRes.body.accentColor).toBe("orange");
   });
 
   it("GET /polls/:id returns 404 for unknown id", async () => {
