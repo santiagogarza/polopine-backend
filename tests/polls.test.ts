@@ -56,7 +56,7 @@ describe("polls API", () => {
     expect(voteRes.body.options[1].votes).toBe(0);
   });
 
-  it("returns results with correct totalVotes", async () => {
+  it("returns results with correct totalVotes for one voter", async () => {
     const createRes = await request(app)
       .post("/polls")
       .send({
@@ -90,10 +90,59 @@ describe("polls API", () => {
       .expect(200);
 
     expect(resultsRes.body.question).toBe("Lunch?");
-    expect(resultsRes.body.totalVotes).toBe(3);
-    expect(resultsRes.body.options[0].votes).toBe(2);
-    expect(resultsRes.body.options[1].votes).toBe(1);
-    expect(resultsRes.body.options[2].votes).toBe(0);
+    expect(resultsRes.body.totalVotes).toBe(1);
+    const votesById = Object.fromEntries(
+      resultsRes.body.options.map((o: { id: string; votes: number }) => [
+        o.id,
+        o.votes,
+      ]),
+    );
+    expect(votesById[opt0]).toBe(0);
+    expect(votesById[opt1]).toBe(1);
+  });
+
+  it("two voters each vote once then one switches", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Team lunch?",
+        options: ["Pizza", "Salad"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optPizza = createRes.body.options[0].id as string;
+    const optSalad = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-a")
+      .send({ optionId: optPizza })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-b")
+      .send({ optionId: optSalad })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-a")
+      .send({ optionId: optSalad })
+      .expect(200);
+
+    const resultsRes = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+
+    expect(resultsRes.body.totalVotes).toBe(2);
+    const pizza = resultsRes.body.options.find(
+      (o: { id: string }) => o.id === optPizza,
+    );
+    const salad = resultsRes.body.options.find(
+      (o: { id: string }) => o.id === optSalad,
+    );
+    expect(pizza.votes).toBe(0);
+    expect(salad.votes).toBe(2);
   });
 
   it("returns 401 on DELETE without admin key", async () => {
@@ -140,17 +189,17 @@ describe("polls API", () => {
 
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-a")
       .send({ optionId: highId })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-b")
       .send({ optionId: highId })
       .expect(200);
     await request(app)
       .post(`/polls/${pollId}/vote`)
-      .set("x-voter-id", VOTER_ID)
+      .set("x-voter-id", "voter-c")
       .send({ optionId: midId })
       .expect(200);
 

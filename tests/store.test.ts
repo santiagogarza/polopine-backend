@@ -7,13 +7,64 @@ describe("store", () => {
   });
 
   it("vote returns undefined for missing poll", () => {
-    expect(store.vote("missing-poll", "missing-option")).toBeUndefined();
+    expect(store.vote("missing-poll", "missing-option", "v1")).toBeUndefined();
   });
 
   it("vote returns undefined for missing option on existing poll", () => {
     const poll = store.createPoll("Q?", ["A", "B"]);
 
-    expect(store.vote(poll.id, "missing-option")).toBeUndefined();
+    expect(store.vote(poll.id, "missing-option", "v1")).toBeUndefined();
+  });
+
+  it("vote twice for same option is idempotent", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optA = poll.options[0].id;
+
+    store.vote(poll.id, optA, "voter-1");
+    store.vote(poll.id, optA, "voter-1");
+
+    const updated = store.getPoll(poll.id)!;
+    expect(updated.options[0].votes).toBe(1);
+    expect(updated.options[1].votes).toBe(0);
+    expect(updated.voters.size).toBe(1);
+  });
+
+  it("vote switch decrements old option and increments new", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optA = poll.options[0].id;
+    const optB = poll.options[1].id;
+
+    store.vote(poll.id, optA, "voter-1");
+    store.vote(poll.id, optB, "voter-1");
+
+    const updated = store.getPoll(poll.id)!;
+    expect(updated.options[0].votes).toBe(0);
+    expect(updated.options[1].votes).toBe(1);
+    expect(updated.voters.get("voter-1")).toBe(optB);
+  });
+
+  it("two voters each vote once without affecting each other", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optA = poll.options[0].id;
+    const optB = poll.options[1].id;
+
+    store.vote(poll.id, optA, "voter-1");
+    store.vote(poll.id, optB, "voter-2");
+    store.vote(poll.id, optB, "voter-1");
+
+    const updated = store.getPoll(poll.id)!;
+    expect(updated.options[0].votes).toBe(0);
+    expect(updated.options[1].votes).toBe(2);
+    expect(updated.voters.size).toBe(2);
+  });
+
+  it("resetPollVotes clears voters map", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    store.vote(poll.id, poll.options[0].id, "voter-1");
+
+    const reset = store.resetPollVotes(poll.id)!;
+    expect(reset.options[0].votes).toBe(0);
+    expect(reset.voters.size).toBe(0);
   });
 
   it("deletePoll returns false for missing poll", () => {

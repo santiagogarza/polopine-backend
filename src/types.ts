@@ -9,6 +9,8 @@ export interface Poll {
   question: string;
   options: PollOption[];
   createdAt: string;
+  /** voterId → optionId for change-vote / one-vote-per-voter semantics */
+  voters: Map<string, string>;
 }
 
 export interface PollResults {
