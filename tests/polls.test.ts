@@ -56,7 +56,7 @@ describe("polls API", () => {
     expect(voteRes.body.options[1].votes).toBe(0);
   });
 
-  it("returns results with correct totalVotes", async () => {
+  it("returns results with totalVotes equal to distinct voters", async () => {
     const createRes = await request(app)
       .post("/polls")
       .send({
@@ -68,6 +68,7 @@ describe("polls API", () => {
     const pollId = createRes.body.id as string;
     const opt0 = createRes.body.options[0].id as string;
     const opt1 = createRes.body.options[1].id as string;
+    const opt2 = createRes.body.options[2].id as string;
 
     await request(app)
       .post(`/polls/${pollId}/vote`)
@@ -90,10 +91,16 @@ describe("polls API", () => {
       .expect(200);
 
     expect(resultsRes.body.question).toBe("Lunch?");
-    expect(resultsRes.body.totalVotes).toBe(3);
-    expect(resultsRes.body.options[0].votes).toBe(2);
-    expect(resultsRes.body.options[1].votes).toBe(1);
-    expect(resultsRes.body.options[2].votes).toBe(0);
+    expect(resultsRes.body.totalVotes).toBe(1);
+    expect(
+      resultsRes.body.options.find((o: { id: string }) => o.id === opt0).votes,
+    ).toBe(0);
+    expect(
+      resultsRes.body.options.find((o: { id: string }) => o.id === opt1).votes,
+    ).toBe(1);
+    expect(
+      resultsRes.body.options.find((o: { id: string }) => o.id === opt2).votes,
+    ).toBe(0);
   });
 
   it("returns 401 on DELETE without admin key", async () => {
@@ -159,13 +166,55 @@ describe("polls API", () => {
       .expect(200);
 
     expect(resultsRes.body.options.map((o: { text: string }) => o.text)).toEqual([
-      "High",
       "Mid",
       "Low",
+      "High",
     ]);
     expect(resultsRes.body.options.map((o: { votes: number }) => o.votes)).toEqual([
-      2, 1, 0,
+      1, 0, 0,
     ]);
+  });
+
+  it("two voters each vote once; switching one does not affect the other", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Two voters?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-a")
+      .send({ optionId: optionA })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-b")
+      .send({ optionId: optionB })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-a")
+      .send({ optionId: optionB })
+      .expect(200);
+
+    const resultsRes = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+
+    expect(resultsRes.body.totalVotes).toBe(2);
+    expect(
+      resultsRes.body.options.find((o: { id: string }) => o.id === optionA).votes,
+    ).toBe(0);
+    expect(
+      resultsRes.body.options.find((o: { id: string }) => o.id === optionB).votes,
+    ).toBe(2);
   });
 
   it("returns 401 on POST reset-votes without admin key", async () => {
