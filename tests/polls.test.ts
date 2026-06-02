@@ -90,10 +90,14 @@ describe("polls API", () => {
       .expect(200);
 
     expect(resultsRes.body.question).toBe("Lunch?");
-    expect(resultsRes.body.totalVotes).toBe(3);
-    expect(resultsRes.body.options[0].votes).toBe(2);
-    expect(resultsRes.body.options[1].votes).toBe(1);
-    expect(resultsRes.body.options[2].votes).toBe(0);
+    expect(resultsRes.body.totalVotes).toBe(1);
+    const votesByText = Object.fromEntries(
+      resultsRes.body.options.map((o: { text: string; votes: number }) => [
+        o.text,
+        o.votes,
+      ]),
+    );
+    expect(votesByText).toEqual({ Pizza: 0, Salad: 1, Soup: 0 });
   });
 
   it("returns 401 on DELETE without admin key", async () => {
@@ -158,14 +162,90 @@ describe("polls API", () => {
       .get(`/polls/${pollId}/results`)
       .expect(200);
 
-    expect(resultsRes.body.options.map((o: { text: string }) => o.text)).toEqual([
-      "High",
-      "Mid",
-      "Low",
-    ]);
-    expect(resultsRes.body.options.map((o: { votes: number }) => o.votes)).toEqual([
-      2, 1, 0,
-    ]);
+    expect(resultsRes.body.options[0]).toMatchObject({ text: "Mid", votes: 1 });
+    expect(
+      resultsRes.body.options
+        .slice(1)
+        .every((o: { votes: number }) => o.votes === 0),
+    ).toBe(true);
+  });
+
+  it("allows a voter to switch votes without double-counting", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Switch?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionA })
+      .expect(200);
+
+    const switchRes = await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", VOTER_ID)
+      .send({ optionId: optionB })
+      .expect(200);
+
+    expect(switchRes.body.options[0].votes).toBe(0);
+    expect(switchRes.body.options[1].votes).toBe(1);
+
+    const resultsRes = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+
+    expect(resultsRes.body.totalVotes).toBe(1);
+  });
+
+  it("two voters each count once and switching one does not affect the other", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Two voters?",
+        options: ["A", "B"],
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+    const optionA = createRes.body.options[0].id as string;
+    const optionB = createRes.body.options[1].id as string;
+
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-one")
+      .send({ optionId: optionA })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-two")
+      .send({ optionId: optionB })
+      .expect(200);
+    await request(app)
+      .post(`/polls/${pollId}/vote`)
+      .set("x-voter-id", "voter-one")
+      .send({ optionId: optionB })
+      .expect(200);
+
+    const resultsRes = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+
+    expect(resultsRes.body.totalVotes).toBe(2);
+    const votesByText = Object.fromEntries(
+      resultsRes.body.options.map((o: { text: string; votes: number }) => [
+        o.text,
+        o.votes,
+      ]),
+    );
+    expect(votesByText).toEqual({ A: 0, B: 2 });
   });
 
   it("returns 401 on POST reset-votes without admin key", async () => {

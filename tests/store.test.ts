@@ -6,14 +6,63 @@ describe("store", () => {
     store.clearPolls();
   });
 
+  const VOTER = "voter-a";
+
   it("vote returns undefined for missing poll", () => {
-    expect(store.vote("missing-poll", "missing-option")).toBeUndefined();
+    expect(store.vote("missing-poll", "missing-option", VOTER)).toBeUndefined();
   });
 
   it("vote returns undefined for missing option on existing poll", () => {
     const poll = store.createPoll("Q?", ["A", "B"]);
 
-    expect(store.vote(poll.id, "missing-option")).toBeUndefined();
+    expect(store.vote(poll.id, "missing-option", VOTER)).toBeUndefined();
+  });
+
+  it("vote is idempotent when the same voter picks the same option twice", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+
+    store.vote(poll.id, optionA, VOTER);
+    const updated = store.vote(poll.id, optionA, VOTER);
+
+    expect(updated?.options[0].votes).toBe(1);
+    expect(updated?.options[1].votes).toBe(0);
+  });
+
+  it("vote switches a voter from one option to another", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+    const optionB = poll.options[1].id;
+
+    store.vote(poll.id, optionA, VOTER);
+    const updated = store.vote(poll.id, optionB, VOTER);
+
+    expect(updated?.options[0].votes).toBe(0);
+    expect(updated?.options[1].votes).toBe(1);
+  });
+
+  it("two voters voting independently do not affect each other when one switches", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+    const optionB = poll.options[1].id;
+
+    store.vote(poll.id, optionA, "voter-1");
+    store.vote(poll.id, optionB, "voter-2");
+    const updated = store.vote(poll.id, optionB, "voter-1");
+
+    expect(updated?.options[0].votes).toBe(0);
+    expect(updated?.options[1].votes).toBe(2);
+  });
+
+  it("resetPollVotes clears the voter map", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+
+    store.vote(poll.id, optionA, VOTER);
+    const reset = store.resetPollVotes(poll.id);
+
+    expect(reset?.options.every((o) => o.votes === 0)).toBe(true);
+    expect(store.vote(poll.id, optionA, VOTER)?.options[0].votes).toBe(1);
   });
 
   it("deletePoll returns false for missing poll", () => {

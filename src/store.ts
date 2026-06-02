@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Poll, PollOption } from "./types.js";
 
-const polls = new Map<string, Poll>();
+/** In-memory poll including per-voter vote tracking (not exposed in API JSON). */
+export interface StoredPoll extends Poll {
+  voters: Map<string, string>;
+}
+
+const polls = new Map<string, StoredPoll>();
 
 export function createPoll(question: string, optionTexts: string[]): Poll {
   const options: PollOption[] = optionTexts.map((text) => ({
@@ -10,11 +15,12 @@ export function createPoll(question: string, optionTexts: string[]): Poll {
     votes: 0,
   }));
 
-  const poll: Poll = {
+  const poll: StoredPoll = {
     id: randomUUID(),
     question,
     options,
     createdAt: new Date().toISOString(),
+    voters: new Map(),
   };
 
   polls.set(poll.id, poll);
@@ -25,7 +31,11 @@ export function getPoll(id: string): Poll | undefined {
   return polls.get(id);
 }
 
-export function vote(pollId: string, optionId: string): Poll | undefined {
+export function vote(
+  pollId: string,
+  optionId: string,
+  voterId: string,
+): Poll | undefined {
   const poll = polls.get(pollId);
   if (!poll) {
     return undefined;
@@ -36,7 +46,22 @@ export function vote(pollId: string, optionId: string): Poll | undefined {
     return undefined;
   }
 
-  option.votes += 1;
+  const priorOptionId = poll.voters.get(voterId);
+  if (priorOptionId === optionId) {
+    return poll;
+  }
+
+  if (priorOptionId !== undefined) {
+    const priorOption = poll.options.find((o) => o.id === priorOptionId);
+    if (priorOption) {
+      priorOption.votes -= 1;
+    }
+    option.votes += 1;
+  } else {
+    option.votes += 1;
+  }
+
+  poll.voters.set(voterId, optionId);
   return poll;
 }
 
@@ -53,6 +78,7 @@ export function resetPollVotes(id: string): Poll | undefined {
   for (const option of poll.options) {
     option.votes = 0;
   }
+  poll.voters.clear();
 
   return poll;
 }
@@ -105,11 +131,12 @@ function insertSeededPoll(
     votes: 0,
   }));
 
-  const poll: Poll = {
+  const poll: StoredPoll = {
     id: randomUUID(),
     question,
     options,
     createdAt,
+    voters: new Map(),
   };
 
   polls.set(poll.id, poll);
