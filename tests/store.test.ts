@@ -38,4 +38,25 @@ describe("store", () => {
       expect(polls[i].createdAt >= polls[i + 1].createdAt).toBe(true);
     }
   });
+
+  it("addOption rejects duplicate text case-insensitively", () => {
+    const poll = store.createPoll("Q?", ["Yes", "No"]);
+
+    expect(store.addOption(poll.id, "YES", "voter-1")).toBe("duplicate");
+  });
+
+  it("deleteOption removes voter map entries for that option", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    const optionA = poll.options[0].id;
+    const optionB = poll.options[1].id;
+
+    store.vote(poll.id, optionA, "voter-1");
+    store.vote(poll.id, optionB, "voter-2");
+
+    store.deleteOption(poll.id, optionA);
+
+    const updated = store.getPoll(poll.id)!;
+    expect(updated.options).toHaveLength(1);
+    expect(updated.options[0].id).toBe(optionB);
+  });
 });

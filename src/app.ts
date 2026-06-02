@@ -8,6 +8,7 @@ import { requireAdmin } from "./middleware/requireAdmin.js";
 import { requireLocal } from "./middleware/requireLocal.js";
 import { requireVoterId } from "./middleware/requireVoterId.js";
 import * as store from "./store.js";
+import { MAX_OPTION_TEXT_LENGTH } from "./store.js";
 import type { PollResults } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -101,8 +102,102 @@ app.post("/polls/:id/vote", requireVoterId, (req: Request, res: Response) => {
     return;
   }
 
-  const updated = store.vote(req.params.id, optionId);
+  const updated = store.vote(
+    req.params.id,
+    optionId,
+    res.locals.voterId as string,
+  );
   res.json(updated);
+});
+
+app.post(
+  "/polls/:id/options",
+  requireVoterId,
+  (req: Request, res: Response) => {
+    const { text } = req.body as { text?: unknown };
+
+    if (typeof text !== "string") {
+      res.status(400).json({ error: "text must be a string" });
+      return;
+    }
+
+    const poll = store.getPoll(req.params.id);
+    if (!poll) {
+      res.status(404).json({ error: "Poll not found" });
+      return;
+    }
+
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      res.status(400).json({ error: "text must be a non-empty string" });
+      return;
+    }
+
+    if (trimmed.length > MAX_OPTION_TEXT_LENGTH) {
+      res.status(400).json({
+        error: `text must be at most ${MAX_OPTION_TEXT_LENGTH} characters`,
+      });
+      return;
+    }
+
+    const result = store.addOption(
+      req.params.id,
+      trimmed,
+      res.locals.voterId as string,
+    );
+
+    if (result === "not_found") {
+      res.status(404).json({ error: "Poll not found" });
+      return;
+    }
+
+    if (result === "disabled") {
+      res.status(403).json({ error: "Voter-added options are disabled for this poll" });
+      return;
+    }
+
+    if (result === "duplicate") {
+      res.status(409).json({ error: "An option with this text already exists" });
+      return;
+    }
+
+    if (result === "invalid") {
+      res.status(400).json({ error: "text must be a non-empty string" });
+      return;
+    }
+
+    res.json(result);
+  },
+);
+
+app.delete(
+  "/polls/:id/options/:optionId",
+  requireAdmin,
+  (req: Request, res: Response) => {
+    const poll = store.deleteOption(req.params.id, req.params.optionId);
+    if (!poll) {
+      res.status(404).json({ error: "Poll or option not found" });
+      return;
+    }
+    res.json(poll);
+  },
+);
+
+app.patch("/polls/:id", requireAdmin, (req: Request, res: Response) => {
+  const { allowVoterOptions } = req.body as { allowVoterOptions?: unknown };
+
+  if (typeof allowVoterOptions !== "boolean") {
+    res.status(400).json({ error: "allowVoterOptions must be a boolean" });
+    return;
+  }
+
+  const poll = store.setAllowVoterOptions(req.params.id, allowVoterOptions);
+  if (!poll) {
+    res.status(404).json({ error: "Poll not found" });
+    return;
+  }
+
+  res.json(poll);
 });
 
 app.get("/polls/:id/results", (req: Request, res: Response) => {

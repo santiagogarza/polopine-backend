@@ -574,4 +574,182 @@ describe("polls API", () => {
       .set("x-admin-key", ADMIN_KEY)
       .expect(429);
   });
+
+  describe("POST /polls/:id/options", () => {
+    async function createPoll() {
+      const res = await request(app)
+        .post("/polls")
+        .send({
+          question: "Add options?",
+          options: ["Alpha", "Beta"],
+        })
+        .expect(201);
+      return res.body as {
+        id: string;
+        allowVoterOptions: boolean;
+        options: Array<{ id: string; text: string; authorVoterId: string | null }>;
+      };
+    }
+
+    it("adds a voter option and returns the updated poll", async () => {
+      const poll = await createPoll();
+
+      const res = await request(app)
+        .post(`/polls/${poll.id}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "Gamma" })
+        .expect(200);
+
+      expect(res.body.options).toHaveLength(3);
+      const added = res.body.options[2];
+      expect(added.text).toBe("Gamma");
+      expect(added.votes).toBe(0);
+      expect(added.authorVoterId).toBe(VOTER_ID);
+      expect(res.body.allowVoterOptions).toBe(true);
+    });
+
+    it("defaults allowVoterOptions to true on create", async () => {
+      const poll = await createPoll();
+      expect(poll.allowVoterOptions).toBe(true);
+      expect(poll.options.every((o) => o.authorVoterId === null)).toBe(true);
+    });
+
+    it("returns 400 when x-voter-id header is missing", async () => {
+      const poll = await createPoll();
+
+      const res = await request(app)
+        .post(`/polls/${poll.id}/options`)
+        .send({ text: "Gamma" })
+        .expect(400);
+
+      expect(res.body.error).toBe("x-voter-id header required");
+    });
+
+    it("returns 400 when text exceeds 80 characters", async () => {
+      const poll = await createPoll();
+
+      const res = await request(app)
+        .post(`/polls/${poll.id}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "x".repeat(81) })
+        .expect(400);
+
+      expect(res.body.error).toBe("text must be at most 80 characters");
+    });
+
+    it("returns 409 for case-insensitive duplicate text", async () => {
+      const poll = await createPoll();
+
+      const res = await request(app)
+        .post(`/polls/${poll.id}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "  ALPHA  " })
+        .expect(409);
+
+      expect(res.body.error).toBe("An option with this text already exists");
+    });
+
+    it("returns 403 when allowVoterOptions is false", async () => {
+      const poll = await createPoll();
+
+      await request(app)
+        .patch(`/polls/${poll.id}`)
+        .set("x-admin-key", ADMIN_KEY)
+        .send({ allowVoterOptions: false })
+        .expect(200);
+
+      const res = await request(app)
+        .post(`/polls/${poll.id}/options`)
+        .set("x-voter-id", VOTER_ID)
+        .send({ text: "Gamma" })
+        .expect(403);
+
+      expect(res.body.error).toBe(
+        "Voter-added options are disabled for this poll",
+      );
+    });
+  });
+
+  describe("DELETE /polls/:id/options/:optionId", () => {
+    it("deletes an option with valid admin key", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({
+          question: "Moderate?",
+          options: ["Keep", "Remove"],
+        })
+        .expect(201);
+
+      const pollId = createRes.body.id as string;
+      const removeId = createRes.body.options[1].id as string;
+
+      const deleteRes = await request(app)
+        .delete(`/polls/${pollId}/options/${removeId}`)
+        .set("x-admin-key", ADMIN_KEY)
+        .expect(200);
+
+      expect(deleteRes.body.options).toHaveLength(1);
+      expect(deleteRes.body.options[0].text).toBe("Keep");
+    });
+
+    it("returns 404 for unknown option", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({
+          question: "Moderate?",
+          options: ["A", "B"],
+        })
+        .expect(201);
+
+      const pollId = createRes.body.id as string;
+
+      const res = await request(app)
+        .delete(
+          `/polls/${pollId}/options/00000000-0000-0000-0000-000000000000`,
+        )
+        .set("x-admin-key", ADMIN_KEY)
+        .expect(404);
+
+      expect(res.body.error).toBe("Poll or option not found");
+    });
+
+    it("returns 401 without admin key", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({
+          question: "Moderate?",
+          options: ["A", "B"],
+        })
+        .expect(201);
+
+      const pollId = createRes.body.id as string;
+      const optionId = createRes.body.options[0].id as string;
+
+      await request(app)
+        .delete(`/polls/${pollId}/options/${optionId}`)
+        .expect(401);
+    });
+  });
+
+  describe("PATCH /polls/:id", () => {
+    it("toggles allowVoterOptions with valid admin key", async () => {
+      const createRes = await request(app)
+        .post("/polls")
+        .send({
+          question: "Settings?",
+          options: ["A", "B"],
+        })
+        .expect(201);
+
+      const pollId = createRes.body.id as string;
+
+      const patchRes = await request(app)
+        .patch(`/polls/${pollId}`)
+        .set("x-admin-key", ADMIN_KEY)
+        .send({ allowVoterOptions: false })
+        .expect(200);
+
+      expect(patchRes.body.allowVoterOptions).toBe(false);
+    });
+  });
 });
