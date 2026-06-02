@@ -1,0 +1,15 @@
+# One-click deploy for the Polopine API (stateful process; in-memory store works for demos).
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: polopine-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ADMIN_API_KEY
+        generateValue: true
