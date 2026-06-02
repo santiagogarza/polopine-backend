@@ -54,6 +54,7 @@ describe("polls API", () => {
 
     expect(voteRes.body.options[0].votes).toBe(1);
     expect(voteRes.body.options[1].votes).toBe(0);
+    expect(voteRes.body.voters).toBeUndefined();
   });
 
   it("returns results with correct totalVotes", async () => {
