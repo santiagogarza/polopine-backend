@@ -32,6 +32,98 @@ describe("polls API", () => {
     expect(res.body.options[1].votes).toBe(0);
     expect(res.body.id).toBeTruthy();
     expect(res.body.createdAt).toBeTruthy();
+    expect(res.body.accentColor).toBe("orange");
+  });
+
+  it("persists a valid accentColor on create and returns it on read", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Pick a flavor",
+        options: ["Vanilla", "Chocolate"],
+        accentColor: "violet",
+      })
+      .expect(201);
+
+    expect(createRes.body.accentColor).toBe("violet");
+
+    const pollId = createRes.body.id as string;
+
+    const getRes = await request(app).get(`/polls/${pollId}`).expect(200);
+    expect(getRes.body.accentColor).toBe("violet");
+
+    const listRes = await request(app).get("/polls").expect(200);
+    const persisted = listRes.body.find(
+      (p: { id: string }) => p.id === pollId,
+    );
+    expect(persisted.accentColor).toBe("violet");
+  });
+
+  it("includes accentColor in /polls/:id/results", async () => {
+    const createRes = await request(app)
+      .post("/polls")
+      .send({
+        question: "Pick a flavor",
+        options: ["Vanilla", "Chocolate"],
+        accentColor: "teal",
+      })
+      .expect(201);
+
+    const pollId = createRes.body.id as string;
+
+    const resultsRes = await request(app)
+      .get(`/polls/${pollId}/results`)
+      .expect(200);
+
+    expect(resultsRes.body.accentColor).toBe("teal");
+  });
+
+  it.each([
+    "orange",
+    "amber",
+    "red",
+    "magenta",
+    "violet",
+    "blue",
+    "teal",
+    "green",
+  ])("accepts %s as a valid accentColor", async (accentColor) => {
+    const res = await request(app)
+      .post("/polls")
+      .send({
+        question: "Pick one",
+        options: ["A", "B"],
+        accentColor,
+      })
+      .expect(201);
+
+    expect(res.body.accentColor).toBe(accentColor);
+  });
+
+  it("rejects an unknown accentColor with 400", async () => {
+    const res = await request(app)
+      .post("/polls")
+      .send({
+        question: "Pick one",
+        options: ["A", "B"],
+        accentColor: "puce",
+      })
+      .expect(400);
+
+    expect(res.body.error).toMatch(/accentColor must be one of/);
+  });
+
+  it("rejects a non-string accentColor with 400", async () => {
+    const res = await request(app)
+      .post("/polls")
+      .send({
+        question: "Pick one",
+        options: ["A", "B"],
+        accentColor: 42,
+      })
+      .expect(400);
+
+    expect(res.body.error).toMatch(/accentColor must be one of/);
   });
 
   it("increments votes when casting a vote", async () => {

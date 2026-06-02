@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
-import type { Poll, PollOption } from "./types.js";
+import {
+  DEFAULT_POLL_ACCENT_COLOR,
+  type Poll,
+  type PollAccentColor,
+  type PollOption,
+} from "./types.js";
 
 const polls = new Map<string, Poll>();
 
-export function createPoll(question: string, optionTexts: string[]): Poll {
+export function createPoll(
+  question: string,
+  optionTexts: string[],
+  accentColor: PollAccentColor = DEFAULT_POLL_ACCENT_COLOR,
+): Poll {
   const options: PollOption[] = optionTexts.map((text) => ({
     id: randomUUID(),
     text,
@@ -15,6 +24,7 @@ export function createPoll(question: string, optionTexts: string[]): Poll {
     question,
     options,
     createdAt: new Date().toISOString(),
+    accentColor,
   };
 
   polls.set(poll.id, poll);
@@ -63,7 +73,11 @@ export function listPolls(): Poll[] {
   );
 }
 
-const SEED_POLL_DEFS: Array<{ question: string; options: string[] }> = [
+const SEED_POLL_DEFS: Array<{
+  question: string;
+  options: string[];
+  accentColor: PollAccentColor;
+}> = [
   {
     question: "What continent are you from?",
     options: [
@@ -75,10 +89,12 @@ const SEED_POLL_DEFS: Array<{ question: string; options: string[] }> = [
       "Antarctica",
       "Oceania",
     ],
+    accentColor: "teal",
   },
   {
     question: "What's your top skill?",
     options: ["Coding", "Design", "ML", "Leading", "Eating all the snacks"],
+    accentColor: "violet",
   },
   {
     question: "How much of a Cursor ninja are you?",
@@ -88,6 +104,7 @@ const SEED_POLL_DEFS: Array<{ question: string; options: string[] }> = [
       "6-12 months",
       "Over a year",
     ],
+    accentColor: "orange",
   },
 ];
 
@@ -98,6 +115,7 @@ function insertSeededPoll(
   question: string,
   optionTexts: string[],
   createdAt: string,
+  accentColor: PollAccentColor,
 ): void {
   const options: PollOption[] = optionTexts.map((text) => ({
     id: randomUUID(),
@@ -110,6 +128,7 @@ function insertSeededPoll(
     question,
     options,
     createdAt,
+    accentColor,
   };
 
   polls.set(poll.id, poll);
@@ -118,7 +137,7 @@ function insertSeededPoll(
 export function seed(): void {
   SEED_POLL_DEFS.forEach((def, index) => {
     const createdAt = new Date(SEED_BASE_MS + index * 60_000).toISOString();
-    insertSeededPoll(def.question, def.options, createdAt);
+    insertSeededPoll(def.question, def.options, createdAt, def.accentColor);
   });
 }
 

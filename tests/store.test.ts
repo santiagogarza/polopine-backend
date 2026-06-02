@@ -38,4 +38,23 @@ describe("store", () => {
       expect(polls[i].createdAt >= polls[i + 1].createdAt).toBe(true);
     }
   });
+
+  it("createPoll defaults accentColor to orange", () => {
+    const poll = store.createPoll("Q?", ["A", "B"]);
+    expect(poll.accentColor).toBe("orange");
+  });
+
+  it("createPoll persists provided accentColor", () => {
+    const poll = store.createPoll("Q?", ["A", "B"], "magenta");
+    expect(poll.accentColor).toBe("magenta");
+
+    const fetched = store.getPoll(poll.id);
+    expect(fetched?.accentColor).toBe("magenta");
+  });
+
+  it("seed assigns an accentColor to every seeded poll", () => {
+    store.seed();
+    const polls = store.listPolls();
+    expect(polls.every((p) => typeof p.accentColor === "string")).toBe(true);
+  });
 });
