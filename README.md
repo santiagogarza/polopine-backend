@@ -1,13 +1,13 @@
 # Polopine Backend
 
-In-memory polling API (Node, Express, TypeScript) for **[Polopine](https://github.com/fieldsphere/polopine-frontend)** — a two-repo demo built by **Santi Garza** to show **multi-repo support for Cursor cloud agents**.
+In-memory polling API (Node, Express, TypeScript) for **[Polopine](https://github.com/santiagogarza/polopine-frontend)** — a two-repo demo built by **Santi Garza** to show **multi-repo support for Cursor cloud agents**.
 
 The frontend lives in a separate repository with no shared code: types are duplicated on purpose so each repo can be cloned, deployed, and worked on independently.
 
 | Repo | Role |
 |------|------|
 | **This repo** | REST API (`POST/GET /polls`, vote, results) |
-| [polopine-frontend](https://github.com/fieldsphere/polopine-frontend) | Vite + React UI (deployed on Vercel) |
+| [polopine-frontend](https://github.com/santiagogarza/polopine-frontend) | Vite + React UI (deployed on Vercel) |
 
 ## Quick start (local)
 
@@ -56,19 +56,19 @@ Errors: JSON `{ "error": "..." }` with an appropriate status code.
 
 Recommended: **[Render](https://render.com)** using [`render.yaml`](render.yaml) in this repo (Blueprint → connect GitHub → deploy).
 
-1. Push this repo to [github.com/fieldsphere/polopine-backend](https://github.com/fieldsphere/polopine-backend).
+1. Push this repo to [github.com/santiagogarza/polopine-backend](https://github.com/santiagogarza/polopine-backend).
 2. In Render: **New → Blueprint** → select the repo → deploy `polopine-api`.
 3. Copy the public URL (e.g. `https://polopine-api.onrender.com`).
 4. In the **frontend** Vercel project, set `VITE_API_URL` to that URL (no trailing slash).
 
 CORS is open for demo use so the Vercel frontend can call the API from the browser.
 
-## Publish to GitHub (fieldsphere)
+## Publish to GitHub
 
 From this directory, after the remote exists:
 
 ```bash
-git remote add origin https://github.com/fieldsphere/polopine-backend.git
+git remote add origin https://github.com/santiagogarza/polopine-backend.git
 git push -u origin main
 ```
 

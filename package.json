@@ -1,10 +1,10 @@
 {
   "name": "polopine-backend",
   "version": "1.0.0",
-  "description": "In-memory polling API for Polopine (fieldsphere multi-repo demo)",
+  "description": "In-memory polling API for Polopine (multi-repo cloud agents demo)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fieldsphere/polopine-backend.git"
+    "url": "https://github.com/santiagogarza/polopine-backend.git"
   },
   "type": "module",
   "main": "dist/server.js",
