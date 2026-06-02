@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { requireAdmin } from "./middleware/requireAdmin.js";
+import { requireLocal } from "./middleware/requireLocal.js";
 import * as store from "./store.js";
 import type { PollResults } from "./types.js";
 
@@ -122,4 +123,23 @@ app.delete("/polls/:id", requireAdmin, (req: Request, res: Response) => {
     return;
   }
   res.status(204).send();
+});
+
+app.post(
+  "/polls/:id/reset-votes",
+  requireAdmin,
+  (req: Request, res: Response) => {
+    const poll = store.resetPollVotes(req.params.id);
+    if (!poll) {
+      res.status(404).json({ error: "Poll not found" });
+      return;
+    }
+    res.json(poll);
+  },
+);
+
+app.post("/admin/reset-all", requireLocal, (_req: Request, res: Response) => {
+  store.clearPolls();
+  store.seed();
+  res.json(store.listPolls());
 });

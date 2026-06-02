@@ -44,6 +44,19 @@ export function deletePoll(id: string): boolean {
   return polls.delete(id);
 }
 
+export function resetPollVotes(id: string): Poll | undefined {
+  const poll = polls.get(id);
+  if (!poll) {
+    return undefined;
+  }
+
+  for (const option of poll.options) {
+    option.votes = 0;
+  }
+
+  return poll;
+}
+
 export function listPolls(): Poll[] {
   return [...polls.values()].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
