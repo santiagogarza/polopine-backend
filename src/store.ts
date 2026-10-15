@@ -98,15 +98,18 @@ function insertSeededPoll(
   question: string,
   optionTexts: string[],
   createdAt: string,
+  seedIndex: number,
 ): void {
-  const options: PollOption[] = optionTexts.map((text) => ({
-    id: randomUUID(),
+  // Deterministic IDs so every serverless instance (each with its own
+  // in-memory store) agrees on the seeded polls' IDs.
+  const options: PollOption[] = optionTexts.map((text, optionIndex) => ({
+    id: `seed-${seedIndex + 1}-opt-${optionIndex + 1}`,
     text,
     votes: 0,
   }));
 
   const poll: Poll = {
-    id: randomUUID(),
+    id: `seed-${seedIndex + 1}`,
     question,
     options,
     createdAt,
@@ -118,7 +121,7 @@ function insertSeededPoll(
 export function seed(): void {
   SEED_POLL_DEFS.forEach((def, index) => {
     const createdAt = new Date(SEED_BASE_MS + index * 60_000).toISOString();
-    insertSeededPoll(def.question, def.options, createdAt);
+    insertSeededPoll(def.question, def.options, createdAt, index);
   });
 }
 

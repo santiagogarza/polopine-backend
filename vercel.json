@@ -1,0 +1,4 @@
+{
+  "functions": { "api/index.ts": { "includeFiles": "package.json" } },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+}
